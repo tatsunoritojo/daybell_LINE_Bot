@@ -1,8 +1,45 @@
 // ==========================================
-// 設定情報
+// 設定情報（すべて Script Properties から読み込む）
 // ==========================================
-const LINE_ACCESS_TOKEN = 'ここにアクセストークンを貼り付けます';
-const LINE_USER_ID = 'ここにユーザーIDを貼り付けます';
+// 初回は setup() を1度だけ実行してプロパティ雛形を作り、
+// スクリプトエディタ → プロジェクトの設定 → スクリプトプロパティ で各値を設定する。
+// コード埋め込みをやめたことで、コードを差し替えても秘匿値が吹き飛ばない
+
+const PROPS = PropertiesService.getScriptProperties();
+const LINE_ACCESS_TOKEN = PROPS.getProperty('LINE_ACCESS_TOKEN');
+const LINE_USER_ID = PROPS.getProperty('LINE_USER_ID');
+const WEATHER_AREA_CODE = PROPS.getProperty('WEATHER_AREA_CODE') || '130000';
+const WEATHER_AREA_LABEL = PROPS.getProperty('WEATHER_AREA_LABEL') || '東京';
+
+// 対象カレンダー: TARGET_CALENDAR_ID が設定されていればそれを、空なら主カレンダーを返す
+function getTargetCalendar() {
+  const id = PROPS.getProperty('TARGET_CALENDAR_ID');
+  return id ? CalendarApp.getCalendarById(id) : getTargetCalendar();
+}
+
+// 初回セットアップ: 必要なプロパティキーの雛形を作成する。
+// 既に値が入っているキーは上書きしない
+function setup() {
+  const defaults = {
+    'LINE_ACCESS_TOKEN': '',
+    'LINE_USER_ID': '',
+    'TARGET_CALENDAR_ID': '',
+    'WEATHER_AREA_CODE': '130000',
+    'WEATHER_AREA_LABEL': '東京'
+  };
+  for (const key in defaults) {
+    if (PROPS.getProperty(key) === null) PROPS.setProperty(key, defaults[key]);
+  }
+  Logger.log([
+    'セットアップ完了。',
+    'スクリプトエディタ → プロジェクトの設定 → スクリプトプロパティ で以下を設定してください:',
+    '  LINE_ACCESS_TOKEN    — LINE Developers のチャネルアクセストークン（長期）',
+    '  LINE_USER_ID         — あなた自身の LINE ユーザーID (U... で始まる)',
+    '  TARGET_CALENDAR_ID   — 対象カレンダーID（空にすると主カレンダー）',
+    '  WEATHER_AREA_CODE    — 気象庁エリアコード（デフォルト 130000 = 東京）',
+    '  WEATHER_AREA_LABEL   — 天気予報の表示ラベル（デフォルト 東京）'
+  ].join('\n'));
+}
 
 // ==========================================
 // LINE Webhook処理
@@ -231,7 +268,7 @@ function executeFinalRegistration(replyToken, taskName, startTimeStr, endTimeStr
   const baseTaskName = stripTitlePrefixes(taskName);
   const prefix = isGoal ? '【目標】' : '【タスク】';
   const title = prefix + baseTaskName;
-  const calendar = CalendarApp.getDefaultCalendar();
+  const calendar = getTargetCalendar();
 
   // JST基準で日付単位の差を計算
   const startDate = jstMidnight(startDt);
@@ -275,7 +312,7 @@ function jstMidnight(date) {
 // ==========================================
 
 function showGoalSelection(replyToken) {
-  const calendar = CalendarApp.getDefaultCalendar();
+  const calendar = getTargetCalendar();
   const now = new Date();
   const halfYearLater = new Date();
   halfYearLater.setMonth(now.getMonth() + 6);
@@ -294,7 +331,7 @@ function showGoalSelection(replyToken) {
 
 function handleGoalConfirmation(replyToken, userMessage) {
   const targetTitle = userMessage.replace('これを目標にする：', '');
-  const events = CalendarApp.getDefaultCalendar().getEvents(new Date(), new Date(new Date().setMonth(new Date().getMonth() + 6)));
+  const events = getTargetCalendar().getEvents(new Date(), new Date(new Date().setMonth(new Date().getMonth() + 6)));
   for (let i = 0; i < events.length; i++) {
     if (events[i].getTitle() === targetTitle) {
       // 既に【タスク】や【目標】が付いていたら一度剥がしてから【目標】を付け直す。
@@ -318,7 +355,7 @@ function stripTitlePrefixes(title) {
 // リッチメニュー「予定確認」から呼ばれる：今日から7日分の予定をFlex Messageで返す
 // 各日 getEventsForDay で取得するため、複数日にまたがる予定は該当する各日に出現する（取りこぼしなし）
 function replyUpcomingWeekSchedule(replyToken) {
-  const calendar = CalendarApp.getDefaultCalendar();
+  const calendar = getTargetCalendar();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -405,7 +442,7 @@ function replyUpcomingWeekSchedule(replyToken) {
 
 function notifyMorning() {
   try {
-    const calendar = CalendarApp.getDefaultCalendar();
+    const calendar = getTargetCalendar();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const allEvents = calendar.getEvents(today, new Date(today.getTime() + 180 * 24 * 60 * 60 * 1000));
@@ -437,7 +474,7 @@ function notifyMorning() {
     const bodyContents = [];
 
     // 天気
-    bodyContents.push(makeSectionHeader('■ 天気予報（東京）'));
+    bodyContents.push(makeSectionHeader('■ 天気予報（' + WEATHER_AREA_LABEL + '）'));
     for (let i = 0; i < weather.length; i++) {
       bodyContents.push(makeRow(weather[i].label, weather[i].text, '#999999'));
     }
@@ -499,7 +536,7 @@ function notifyNight() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(0, 0, 0, 0);
-    const events = CalendarApp.getDefaultCalendar().getEventsForDay(tomorrow);
+    const events = getTargetCalendar().getEventsForDay(tomorrow);
     let scheduleList = [];
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
@@ -560,7 +597,7 @@ function notifyNight() {
 // 気象庁APIから天気を取得し、日別に配列で返す（Flexで行ごとに表示するため）
 function getWeatherForecastLines() {
   try {
-    const data = JSON.parse(UrlFetchApp.fetch('https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json').getContentText());
+    const data = JSON.parse(UrlFetchApp.fetch('https://www.jma.go.jp/bosai/forecast/data/forecast/' + WEATHER_AREA_CODE + '.json').getContentText());
     const weathers = data[0].timeSeries[0].areas[0].weathers;
     const labels = ['今日', '明日', '明後日'];
     const result = [];
@@ -651,26 +688,34 @@ function sendQuickReply(replyToken, text, items) {
 }
 
 // --- トリガー自動設定用プログラム ---
+// 自分が管理する関数（notifyMorning / notifyNight）のトリガーのみを削除して
+// 再作成する。ユーザーが追加した他のトリガーは巻き添えにしない。
+// inTimezone('Asia/Tokyo') で時刻解釈を JST に固定、nearMinute(0) で発火を
+// 各時刻の前後 ±15分 に寄せる（GAS 仕様上、より厳密な時刻指定は不可能）
 function setTriggers() {
-  // 1. 既存のトリガーをすべて削除（重複して通知がいくのを防ぐ安全装置）
+  const MANAGED = ['notifyMorning', 'notifyNight'];
   const triggers = ScriptApp.getProjectTriggers();
   for (let i = 0; i < triggers.length; i++) {
-    ScriptApp.deleteTrigger(triggers[i]);
+    if (MANAGED.indexOf(triggers[i].getHandlerFunction()) !== -1) {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
   }
 
-  // 2. 朝用トリガーの設定（毎日 午前7時〜8時の間に実行）
   ScriptApp.newTrigger('notifyMorning')
     .timeBased()
+    .inTimezone('Asia/Tokyo')
     .everyDays(1)
     .atHour(7)
+    .nearMinute(0)
     .create();
 
-  // 3. 夜用トリガーの設定（毎日 午後8時〜9時の間に実行）
   ScriptApp.newTrigger('notifyNight')
     .timeBased()
+    .inTimezone('Asia/Tokyo')
     .everyDays(1)
     .atHour(20)
+    .nearMinute(0)
     .create();
 
-  Logger.log('トリガーの設定が完了しました。');
+  Logger.log('トリガーを設定しました。notifyMorning: 7:00 前後, notifyNight: 20:00 前後（いずれもJST）');
 }
