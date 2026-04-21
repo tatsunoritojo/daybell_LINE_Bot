@@ -1,8 +1,8 @@
-# 予定お知らせ君_LINEボット
+# 予定お知らせ君
 
 <img src="icon.png" alt="予定お知らせ君 アイコン" width="200" align="right">
 
-Googleカレンダーと連携して、予定を LINE で対話的に登録・通知してくれる Google Apps Script (GAS) 製の LINE ボットです。
+Googleカレンダーと連携して、予定を LINE で対話的に登録・通知してくれる Google Apps Script (GAS) 製の LINE ボットです。LINE で友だち追加すると **「予定お知らせ君」** という名前で登場します（リポジトリ上のコード名は `daybell`）。
 
 ## 主な機能
 
