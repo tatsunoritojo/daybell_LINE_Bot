@@ -166,7 +166,7 @@ function showGoalSelection(replyToken) {
   let items = [];
   for (let i = 0; i < Math.min(events.length, 13); i++) {
     const title = events[i].getTitle();
-    if (!title.includes('【リマインド】') && !title.includes('【目標】')) {
+    if (!title.includes('【目標】')) {
       items.push({ "type": "action", "action": { "type": "message", "label": title.substring(0, 20), "text": "これを目標にする：" + title } });
     }
   }
@@ -199,12 +199,7 @@ function replyUpcomingWeekSchedule(replyToken) {
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
-    const rawEvents = calendar.getEventsForDay(d);
-    const events = [];
-    for (let k = 0; k < rawEvents.length; k++) {
-      // リマインダーは予定一覧には含めない（夜の通知で別途扱う）
-      if (!rawEvents[k].getTitle().includes('【リマインド】')) events.push(rawEvents[k]);
-    }
+    const events = calendar.getEventsForDay(d);
     if (events.length === 0) continue;
     hasAny = true;
 
@@ -298,7 +293,7 @@ function notifyMorning() {
         milestones.push({ title: title.replace('【目標】', ''), days: diffDays });
       } else if (title.includes('【タスク】') && diffDays >= 0 && diffDays <= 3) {
         tasks.push({ title: title.replace('【タスク】', ''), days: diffDays });
-      } else if (diffDays === 7 && !title.includes('【リマインド】')) {
+      } else if (diffDays === 7) {
         nextWeek.push({
           title: title,
           time: formatEventTime(event, eventDate)
@@ -376,21 +371,17 @@ function notifyNight() {
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(0, 0, 0, 0);
     const events = CalendarApp.getDefaultCalendar().getEventsForDay(tomorrow);
-    let reminderList = [], scheduleList = [];
+    let scheduleList = [];
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
       const title = event.getTitle();
-      if (title.includes('【リマインド】')) {
-        reminderList.push(title.replace('【リマインド】', ''));
-      } else {
-        const isGoal = title.includes('【目標】');
-        const cleanTitle = title.replace('【目標】', '').replace('【タスク】', '');
-        scheduleList.push({
-          time: formatEventTime(event, tomorrow),
-          title: (isGoal ? '★ ' : '') + cleanTitle,
-          isGoal: isGoal
-        });
-      }
+      const isGoal = title.includes('【目標】');
+      const cleanTitle = title.replace('【目標】', '').replace('【タスク】', '');
+      scheduleList.push({
+        time: formatEventTime(event, tomorrow),
+        title: (isGoal ? '★ ' : '') + cleanTitle,
+        isGoal: isGoal
+      });
     }
 
     const weekDayLabels = ['日', '月', '火', '水', '木', '金', '土'];
@@ -412,17 +403,6 @@ function notifyNight() {
       }
     } else {
       bodyContents.push({ "type": "text", "text": "特にありません。", "size": "sm", "color": "#999999", "margin": "xs" });
-    }
-
-    if (reminderList.length > 0) {
-      bodyContents.push(makeSectionHeader('■ 明日のリマインダー'));
-      for (let i = 0; i < reminderList.length; i++) {
-        bodyContents.push({
-          "type": "text",
-          "text": '・' + reminderList[i],
-          "size": "sm", "color": "#3D2510", "margin": "xs", "wrap": true
-        });
-      }
     }
 
     pushLinePayload({
