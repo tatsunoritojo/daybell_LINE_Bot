@@ -1,8 +1,0 @@
-# clasp push時にGASへアップロードしないファイル
-# rootDir が src/ なのでそもそも src/ 外は対象外だが、念のため明示
-
-**/**
-!appsscript.json
-!*.gs
-!*.js
-!*.html
