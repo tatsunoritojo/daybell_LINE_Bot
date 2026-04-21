@@ -7,6 +7,12 @@ const LINE_USER_ID = 'ここにユーザーIDを貼り付けます';
 // ==========================================
 // LINE Webhook処理
 // ==========================================
+//
+// タスク登録フローは3段階（開始時刻 → 終了時刻 → 目標/タスク確定）の対話。
+// 各段階の状態はセッション（PropertiesService）で管理し、古いボタンの再タップや
+// 別フローからの割り込みによる二重登録を防ぐ。
+// セッションと齟齬するポストバックは全て無視される。
+
 function doPost(e) {
   try {
     const events = JSON.parse(e.postData.contents).events;
@@ -14,8 +20,6 @@ function doPost(e) {
     const event = events[0];
 
     // 送信元ユーザーIDチェック
-    // GAS の Webhook URL が万が一漏れた場合でも、攻撃者の userId は LINE_USER_ID と一致しないため拒否される。
-    // このチェックは本ボットが「本人1人専用」前提のため有効。複数ユーザー運用する場合は設計から見直すこと
     const sourceUserId = event.source && event.source.userId;
     if (sourceUserId !== LINE_USER_ID) {
       console.log('Rejected unauthorized userId: ' + sourceUserId);
@@ -29,16 +33,20 @@ function doPost(e) {
       const userMessage = event.message.text;
 
       if (userMessage === '目標設定') {
+        clearTaskSession();
         showGoalSelection(replyToken);
       }
       else if (userMessage === '予定確認') {
+        clearTaskSession();
         replyUpcomingWeekSchedule(replyToken);
       }
       else if (userMessage.startsWith('これを目標にする：')) {
         handleGoalConfirmation(replyToken, userMessage);
       }
       else {
-        // 1. タスク名を受け取り、開始時間選択GUIを出す
+        // タスク登録フロー開始。既存セッションがあっても新メッセージで上書きし、
+        // 古い開始/終了ピッカーのボタンは以降のポストバックで無視される
+        setTaskSession({ step: 'awaitingStart', taskName: userMessage });
         sendStartDateTimePicker(replyToken, userMessage);
       }
     }
@@ -52,27 +60,56 @@ function doPost(e) {
         return acc;
       }, {});
 
-      if (params.action === 'setStart') {
-        // 2. 開始時間を受け取り、終了時間選択GUIを出す
-        const taskName = params.name;
+      const session = getTaskSession();
+      if (!session) {
+        console.log('Ignoring postback: no active session. action=' + params.action);
+        return;
+      }
+
+      if (params.action === 'setStart' && session.step === 'awaitingStart') {
         const startTime = event.postback.params.datetime;
-        sendEndDateTimePicker(replyToken, taskName, startTime);
+        setTaskSession({ step: 'awaitingEnd', taskName: session.taskName, startTime: startTime });
+        sendEndDateTimePicker(replyToken, session.taskName, startTime);
       }
-      else if (params.action === 'setEnd') {
-        // 3. 終了時間を受け取り、目標にするか確認する
-        const taskName = params.name;
-        const startTime = params.start;
+      else if (params.action === 'setEnd' && session.step === 'awaitingEnd') {
         const endTime = event.postback.params.datetime;
-        sendFinalGoalConfirm(replyToken, taskName, startTime, endTime);
+        setTaskSession({
+          step: 'awaitingConfirm',
+          taskName: session.taskName,
+          startTime: session.startTime,
+          endTime: endTime
+        });
+        sendFinalGoalConfirm(replyToken);
       }
-      else if (params.action === 'finalRegister') {
-        // 4. 最終登録実行
-        executeFinalRegistration(replyToken, params);
+      else if (params.action === 'finalRegister' && session.step === 'awaitingConfirm') {
+        const isGoal = params.isGoal === 'true';
+        // 登録前にセッションをクリア。万一二重発火しても後続は session=null で弾かれる
+        clearTaskSession();
+        executeFinalRegistration(replyToken, session.taskName, session.startTime, session.endTime, isGoal);
+      }
+      else {
+        console.log('Ignoring stale/out-of-order postback. action=' + params.action + ', step=' + session.step);
       }
     }
   } catch (err) {
     console.error('doPost error: ' + (err && err.message ? err.message : err));
   }
+}
+
+// タスク登録フローのセッション管理（PropertiesServiceで永続化）
+const TASK_SESSION_KEY = 'task_session';
+
+function getTaskSession() {
+  const raw = PropertiesService.getScriptProperties().getProperty(TASK_SESSION_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
+
+function setTaskSession(session) {
+  PropertiesService.getScriptProperties().setProperty(TASK_SESSION_KEY, JSON.stringify(session));
+}
+
+function clearTaskSession() {
+  PropertiesService.getScriptProperties().deleteProperty(TASK_SESSION_KEY);
 }
 
 // ==========================================
@@ -90,7 +127,7 @@ function sendStartDateTimePicker(replyToken, taskName) {
       'actions': [{
         'type': 'datetimepicker',
         'label': 'カレンダーを開く',
-        'data': 'action=setStart&name=' + taskName,
+        'data': 'action=setStart',
         'mode': 'datetime'
       }]
     }
@@ -104,19 +141,22 @@ function sendEndDateTimePicker(replyToken, taskName, startTime) {
     'altText': '終了時間を選択してください',
     'template': {
       'type': 'buttons',
-      'text': '次に【終了時間】を選んでください。',
+      'text': '「' + taskName + '」の【終了時間】を選んでください。',
       'actions': [{
         'type': 'datetimepicker',
         'label': 'カレンダーを開く',
-        'data': 'action=setEnd&name=' + taskName + '&start=' + startTime,
-        'mode': 'datetime'
+        'data': 'action=setEnd',
+        'mode': 'datetime',
+        // 開始時刻より前を選べないようにガード
+        'min': startTime,
+        'initial': startTime
       }]
     }
   });
 }
 
 // ステップ3：目標にするか確認する
-function sendFinalGoalConfirm(replyToken, taskName, startTime, endTime) {
+function sendFinalGoalConfirm(replyToken) {
   sendLinePayload(replyToken, {
     'type': 'template',
     'altText': '目標に設定しますか？',
@@ -124,32 +164,58 @@ function sendFinalGoalConfirm(replyToken, taskName, startTime, endTime) {
       'type': 'confirm',
       'text': 'このタスクを「重要目標（カウントダウン対象）」として登録しますか？',
       'actions': [
-        { 'type': 'postback', 'label': 'はい', 'data': 'action=finalRegister&isGoal=true&name=' + taskName + '&start=' + startTime + '&end=' + endTime },
-        { 'type': 'postback', 'label': 'いいえ', 'data': 'action=finalRegister&isGoal=false&name=' + taskName + '&start=' + startTime + '&end=' + endTime }
+        { 'type': 'postback', 'label': 'はい', 'data': 'action=finalRegister&isGoal=true' },
+        { 'type': 'postback', 'label': 'いいえ', 'data': 'action=finalRegister&isGoal=false' }
       ]
     }
   });
 }
 
 // ステップ4：カレンダーへ書き込み
-function executeFinalRegistration(replyToken, params) {
-  const taskName = params.name;
-  const startDt = new Date(params.start);
-  const endDt = new Date(params.end);
-  const isGoal = params.isGoal === 'true';
-
+// 複数日（開始日と終了日が2日以上離れている）の場合は時間指定ではなく終日イベントとして登録する。
+// GASの createAllDayEvent(startDate, endDateExclusive) を使うと GCal の上部バーにきれいに収まる
+function executeFinalRegistration(replyToken, taskName, startTimeStr, endTimeStr, isGoal) {
+  const startDt = new Date(startTimeStr);
+  const endDt = new Date(endTimeStr);
   const prefix = isGoal ? '【目標】' : '【タスク】';
-  CalendarApp.getDefaultCalendar().createEvent(prefix + taskName, startDt, endDt);
+  const title = prefix + taskName;
+  const calendar = CalendarApp.getDefaultCalendar();
 
-  const sameDay = startDt.getFullYear() === endDt.getFullYear()
-    && startDt.getMonth() === endDt.getMonth()
-    && startDt.getDate() === endDt.getDate();
-  const startStr = Utilities.formatDate(startDt, 'Asia/Tokyo', 'M/d HH:mm');
-  const endStr = sameDay
-    ? Utilities.formatDate(endDt, 'Asia/Tokyo', 'HH:mm')
-    : Utilities.formatDate(endDt, 'Asia/Tokyo', 'M/d HH:mm');
-  const msg = "カレンダーに登録しました。\n日時：" + startStr + '〜' + endStr + "\n内容：" + prefix + taskName + (isGoal ? "\n※目標として設定されました。" : "");
+  // JST基準で日付単位の差を計算
+  const startDate = jstMidnight(startDt);
+  const endDate = jstMidnight(endDt);
+  const dayDiff = Math.round((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+
+  let msg;
+  if (dayDiff >= 2) {
+    // 2日以上またがる予定は終日イベントに変換（時間の切れ目は失うが上部バーで綺麗に並ぶ）
+    const endExclusive = new Date(endDate.getTime() + 24 * 60 * 60 * 1000);
+    calendar.createAllDayEvent(title, startDate, endExclusive);
+    const startStr = Utilities.formatDate(startDate, 'Asia/Tokyo', 'M/d');
+    const endStr = Utilities.formatDate(endDate, 'Asia/Tokyo', 'M/d');
+    msg = "カレンダーに登録しました（複数日のため終日扱い）。\n日時：" + startStr + '〜' + endStr
+      + "\n内容：" + title;
+  } else {
+    // 単日 or 日またぎ24時間以内は時間指定イベントのまま
+    calendar.createEvent(title, startDt, endDt);
+    const sameDay = startDt.getFullYear() === endDt.getFullYear()
+      && startDt.getMonth() === endDt.getMonth()
+      && startDt.getDate() === endDt.getDate();
+    const startStr = Utilities.formatDate(startDt, 'Asia/Tokyo', 'M/d HH:mm');
+    const endStr = sameDay
+      ? Utilities.formatDate(endDt, 'Asia/Tokyo', 'HH:mm')
+      : Utilities.formatDate(endDt, 'Asia/Tokyo', 'M/d HH:mm');
+    msg = "カレンダーに登録しました。\n日時：" + startStr + '〜' + endStr + "\n内容：" + title;
+  }
+
+  if (isGoal) msg += "\n※目標として設定されました。";
   replyLineMessage(replyToken, msg);
+}
+
+// スクリプトTZに依らず、与えられたDateをJST基準でその日の0時0分に揃えて返す
+function jstMidnight(date) {
+  const jstDateStr = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy-MM-dd');
+  return new Date(jstDateStr + 'T00:00:00+09:00');
 }
 
 // ==========================================
