@@ -141,8 +141,14 @@ function executeFinalRegistration(replyToken, params) {
   const prefix = isGoal ? '【目標】' : '【タスク】';
   CalendarApp.getDefaultCalendar().createEvent(prefix + taskName, startDt, endDt);
 
-  const dateStr = Utilities.formatDate(startDt, 'Asia/Tokyo', 'M/d HH:mm');
-  const msg = "✅ カレンダーに登録しました！\n日時：" + dateStr + "\n内容：" + prefix + taskName + (isGoal ? "\n※目標として設定されました。" : "");
+  const sameDay = startDt.getFullYear() === endDt.getFullYear()
+    && startDt.getMonth() === endDt.getMonth()
+    && startDt.getDate() === endDt.getDate();
+  const startStr = Utilities.formatDate(startDt, 'Asia/Tokyo', 'M/d HH:mm');
+  const endStr = sameDay
+    ? Utilities.formatDate(endDt, 'Asia/Tokyo', 'HH:mm')
+    : Utilities.formatDate(endDt, 'Asia/Tokyo', 'M/d HH:mm');
+  const msg = "カレンダーに登録しました。\n日時：" + startStr + '〜' + endStr + "\n内容：" + prefix + taskName + (isGoal ? "\n※目標として設定されました。" : "");
   replyLineMessage(replyToken, msg);
 }
 
@@ -220,16 +226,8 @@ function replyUpcomingWeekSchedule(replyToken) {
       const rawTitle = event.getTitle();
       const isGoal = rawTitle.includes('【目標】');
       const cleanTitle = rawTitle.replace('【目標】', '').replace('【タスク】', '');
-
-      // 時間ラベル：終日 / 前日以前からの継続 / 通常時刻
-      let timeText;
-      if (event.isAllDayEvent()) {
-        timeText = '終日';
-      } else if (event.getStartTime().getTime() < d.getTime()) {
-        timeText = '継続中';
-      } else {
-        timeText = Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm');
-      }
+      const timeText = formatEventTime(event, d);
+      const displayTitle = (isGoal ? '★ ' : '') + cleanTitle;
 
       bodyContents.push({
         "type": "box",
@@ -237,15 +235,15 @@ function replyUpcomingWeekSchedule(replyToken) {
         "spacing": "sm",
         "margin": "sm",
         "contents": [
-          { "type": "text", "text": timeText, "size": "xs", "color": "#999999", "flex": 3 },
-          { "type": "text", "text": (isGoal ? "🚩 " : "") + cleanTitle, "size": "sm", "color": "#3D2510", "flex": 9, "wrap": true }
+          { "type": "text", "text": timeText, "size": "xs", "color": "#999999", "flex": 4 },
+          { "type": "text", "text": displayTitle, "size": "sm", "color": isGoal ? '#E85D3B' : '#3D2510', "flex": 8, "wrap": true }
         ]
       });
     }
   }
 
   if (!hasAny) {
-    replyLineMessage(replyToken, '📆 今後1週間の予定はありません。');
+    replyLineMessage(replyToken, '今後1週間の予定はありません。');
     return;
   }
 
@@ -265,7 +263,7 @@ function replyUpcomingWeekSchedule(replyToken) {
         "backgroundColor": "#F5EDD9",
         "paddingAll": "md",
         "contents": [
-          { "type": "text", "text": "📆 今後1週間の予定", "weight": "bold", "size": "lg", "color": "#3D2510" },
+          { "type": "text", "text": "今後1週間の予定", "weight": "bold", "size": "lg", "color": "#3D2510" },
           { "type": "text", "text": rangeText, "size": "xs", "color": "#6B4A2A", "margin": "xs" }
         ]
       },
@@ -302,7 +300,7 @@ function notifyMorning() {
       } else if (diffDays === 7 && !title.includes('ごみ')) {
         nextWeek.push({
           title: title,
-          time: event.isAllDayEvent() ? '終日' : Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm')
+          time: formatEventTime(event, eventDate)
         });
       }
     }
@@ -314,21 +312,21 @@ function notifyMorning() {
     const bodyContents = [];
 
     // 天気
-    bodyContents.push(makeSectionHeader('☁️ 天気予報（東京）'));
+    bodyContents.push(makeSectionHeader('■ 天気予報（東京）'));
     for (let i = 0; i < weather.length; i++) {
       bodyContents.push(makeRow(weather[i].label, weather[i].text, '#999999'));
     }
 
     // 目標カウントダウン
     if (milestones.length > 0) {
-      bodyContents.push(makeSectionHeader('🚩 目標カウントダウン'));
+      bodyContents.push(makeSectionHeader('■ 目標カウントダウン'));
       for (let i = 0; i < milestones.length; i++) {
         bodyContents.push(makeRow('あと ' + milestones[i].days + '日', milestones[i].title, '#E85D3B'));
       }
     }
 
     // 期限が迫るタスク
-    bodyContents.push(makeSectionHeader('⏰ 期限が迫っているタスク'));
+    bodyContents.push(makeSectionHeader('■ 期限が迫っているタスク'));
     if (tasks.length > 0) {
       for (let i = 0; i < tasks.length; i++) {
         const left = tasks[i].days === 0 ? '今日まで' : '残り' + tasks[i].days + '日';
@@ -339,7 +337,7 @@ function notifyMorning() {
     }
 
     // 1週間後の予定
-    bodyContents.push(makeSectionHeader('📆 1週間後の予定'));
+    bodyContents.push(makeSectionHeader('■ 1週間後の予定'));
     if (nextWeek.length > 0) {
       for (let i = 0; i < nextWeek.length; i++) {
         bodyContents.push(makeRow(nextWeek[i].time, nextWeek[i].title, '#999999'));
@@ -350,14 +348,14 @@ function notifyMorning() {
 
     pushLinePayload({
       "type": "flex",
-      "altText": "☀️ おはようございます！今日の状況をお知らせします",
+      "altText": "おはようございます。今日の状況をお知らせします",
       "contents": {
         "type": "bubble",
         "size": "mega",
         "header": {
           "type": "box", "layout": "vertical", "backgroundColor": "#FFE8BC", "paddingAll": "md",
           "contents": [
-            { "type": "text", "text": "☀️ おはようございます", "weight": "bold", "size": "lg", "color": "#3D2510" },
+            { "type": "text", "text": "おはようございます", "weight": "bold", "size": "lg", "color": "#3D2510" },
             { "type": "text", "text": dateLabel, "size": "xs", "color": "#6B4A2A", "margin": "xs" }
           ]
         },
@@ -375,6 +373,7 @@ function notifyNight() {
   try {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
     const events = CalendarApp.getDefaultCalendar().getEventsForDay(tomorrow);
     let garbageList = [], scheduleList = [];
     for (let i = 0; i < events.length; i++) {
@@ -383,18 +382,13 @@ function notifyNight() {
       if (title.includes('ごみ')) {
         garbageList.push(title);
       } else {
-        const rawTitle = title;
-        const isGoal = rawTitle.includes('【目標】');
-        const cleanTitle = rawTitle.replace('【目標】', '').replace('【タスク】', '');
-        let timeText;
-        if (event.isAllDayEvent()) {
-          timeText = '終日';
-        } else if (event.getStartTime().getTime() < tomorrow.getTime()) {
-          timeText = '継続中';
-        } else {
-          timeText = Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm');
-        }
-        scheduleList.push({ time: timeText, title: (isGoal ? '🚩 ' : '') + cleanTitle });
+        const isGoal = title.includes('【目標】');
+        const cleanTitle = title.replace('【目標】', '').replace('【タスク】', '');
+        scheduleList.push({
+          time: formatEventTime(event, tomorrow),
+          title: (isGoal ? '★ ' : '') + cleanTitle,
+          isGoal: isGoal
+        });
       }
     }
 
@@ -403,17 +397,24 @@ function notifyNight() {
 
     const bodyContents = [];
 
-    bodyContents.push(makeSectionHeader('📆 明日の予定'));
+    bodyContents.push(makeSectionHeader('■ 明日の予定'));
     if (scheduleList.length > 0) {
       for (let i = 0; i < scheduleList.length; i++) {
-        bodyContents.push(makeRow(scheduleList[i].time, scheduleList[i].title, '#999999'));
+        const s = scheduleList[i];
+        bodyContents.push({
+          "type": "box", "layout": "baseline", "spacing": "sm", "margin": "sm",
+          "contents": [
+            { "type": "text", "text": s.time, "size": "xs", "color": "#999999", "flex": 4 },
+            { "type": "text", "text": s.title, "size": "sm", "color": s.isGoal ? '#E85D3B' : '#3D2510', "flex": 8, "wrap": true }
+          ]
+        });
       }
     } else {
       bodyContents.push({ "type": "text", "text": "特にありません。", "size": "sm", "color": "#999999", "margin": "xs" });
     }
 
     if (garbageList.length > 0) {
-      bodyContents.push(makeSectionHeader('🗑️ 明日のゴミ出し'));
+      bodyContents.push(makeSectionHeader('■ 明日のゴミ出し'));
       bodyContents.push({
         "type": "text",
         "text": '「' + garbageList.join('と') + '」の日です',
@@ -423,14 +424,14 @@ function notifyNight() {
 
     pushLinePayload({
       "type": "flex",
-      "altText": "🌙 明日の予定",
+      "altText": "明日の予定",
       "contents": {
         "type": "bubble",
         "size": "mega",
         "header": {
           "type": "box", "layout": "vertical", "backgroundColor": "#4A6590", "paddingAll": "md",
           "contents": [
-            { "type": "text", "text": "🌙 明日の予定", "weight": "bold", "size": "lg", "color": "#F5EDD9" },
+            { "type": "text", "text": "明日の予定", "weight": "bold", "size": "lg", "color": "#F5EDD9" },
             { "type": "text", "text": dateLabel, "size": "xs", "color": "#C9D4E5", "margin": "xs" }
           ]
         },
@@ -475,10 +476,31 @@ function makeRow(leftText, rightText, leftColor) {
   return {
     "type": "box", "layout": "baseline", "spacing": "sm", "margin": "sm",
     "contents": [
-      { "type": "text", "text": leftText, "size": "xs", "color": leftColor || '#999999', "flex": 3 },
-      { "type": "text", "text": rightText, "size": "sm", "color": "#3D2510", "flex": 7, "wrap": true }
+      { "type": "text", "text": leftText, "size": "xs", "color": leftColor || '#999999', "flex": 4 },
+      { "type": "text", "text": rightText, "size": "sm", "color": "#3D2510", "flex": 8, "wrap": true }
     ]
   };
+}
+
+// 予定の時間ラベルを返す
+//   通常: 「HH:mm〜HH:mm」
+//   当日以前からの継続で当日中に終了: 「継続〜HH:mm」
+//   当日以前から継続し翌日以降まで続く: 「継続中」
+//   当日開始だが翌日以降まで続く: 「HH:mm〜翌日」
+//   終日: 「終日」
+function formatEventTime(event, dayStart) {
+  if (event.isAllDayEvent()) return '終日';
+  const start = event.getStartTime();
+  const end = event.getEndTime();
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+  const startsBeforeDay = start.getTime() < dayStart.getTime();
+  const endsAfterDay = end.getTime() > dayEnd.getTime();
+  const fmt = function(d) { return Utilities.formatDate(d, 'Asia/Tokyo', 'HH:mm'); };
+
+  if (startsBeforeDay && endsAfterDay) return '継続中';
+  if (startsBeforeDay) return '継続〜' + fmt(end);
+  if (endsAfterDay) return fmt(start) + '〜翌日';
+  return fmt(start) + '〜' + fmt(end);
 }
 
 // --- 通信ユーティリティ ---

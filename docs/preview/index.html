@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>予定お知らせ君 Flex Message プレビュー</title>
+<style>
+  :root {
+    --cream: #F5EDD9;
+    --cream-dark: #D9CDB0;
+    --brown-deep: #3D2510;
+    --brown-mid: #6B4A2A;
+    --gray-sub: #999999;
+    --orange: #D97706;
+    --accent: #E85D3B;
+    --dawn: #FFE8BC;
+    --dusk: #4A6590;
+    --dusk-sub: #C9D4E5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    background: #8aa3c7;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--brown-deep);
+  }
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 28px;
+  }
+  .label {
+    grid-column: 1 / -1;
+    color: #fff;
+    font-size: 14px;
+    letter-spacing: 2px;
+    margin-bottom: -16px;
+  }
+  .bubble {
+    background: #fff;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+    max-width: 380px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .bubble-header {
+    padding: 16px;
+  }
+  .bubble-header.dawn { background: var(--dawn); color: var(--brown-deep); }
+  .bubble-header.cream { background: var(--cream); color: var(--brown-deep); }
+  .bubble-header.dusk { background: var(--dusk); color: var(--cream); }
+  .title {
+    font-weight: 700;
+    font-size: 17px;
+    margin: 0;
+  }
+  .subtitle {
+    font-size: 11px;
+    margin-top: 4px;
+    opacity: 0.8;
+  }
+  .bubble-body {
+    padding: 16px;
+  }
+  .section {
+    margin-top: 18px;
+  }
+  .section:first-child { margin-top: 0; }
+  .section-header {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--brown-deep);
+    margin-bottom: 4px;
+  }
+  .separator {
+    border: none;
+    border-top: 1px solid var(--cream-dark);
+    margin: 0 0 8px 0;
+  }
+  .day-header {
+    font-size: 15px;
+    font-weight: 700;
+    margin-top: 18px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--cream-dark);
+  }
+  .day-header.today { color: var(--orange); margin-top: 0; }
+  .row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .row-left {
+    flex: 4;
+    font-size: 11px;
+    color: var(--gray-sub);
+  }
+  .row-left.accent { color: var(--accent); font-weight: 700; }
+  .row-right {
+    flex: 8;
+    color: var(--brown-deep);
+  }
+  .row-right.goal {
+    color: var(--accent);
+  }
+  .empty {
+    font-size: 13px;
+    color: var(--gray-sub);
+    margin-top: 4px;
+  }
+  .note {
+    background: #ffffffaa;
+    border-radius: 10px;
+    padding: 14px;
+    grid-column: 1 / -1;
+    font-size: 13px;
+    color: #333;
+    line-height: 1.6;
+  }
+  .note h3 { margin: 0 0 8px 0; font-size: 14px; }
+  .note code { background: #eee; padding: 2px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="label">▼ 予定確認（リッチメニュー下段タップ時）</div>
+  <div class="bubble">
+    <div class="bubble-header cream">
+      <p class="title">今後1週間の予定</p>
+      <p class="subtitle">4/21(火) 〜 4/27(月)</p>
+    </div>
+    <div class="bubble-body">
+      <div class="day-header today">4/21(火) 今日</div>
+      <div class="row"><span class="row-left">10:00〜11:30</span><span class="row-right">打ち合わせ</span></div>
+      <div class="row"><span class="row-left">終日</span><span class="row-right goal">★ プロジェクト提出</span></div>
+
+      <div class="day-header">4/23(木)</div>
+      <div class="row"><span class="row-left">14:30〜15:30</span><span class="row-right">歯医者</span></div>
+
+      <div class="day-header">4/26(日)</div>
+      <div class="row"><span class="row-left">09:00〜翌日</span><span class="row-right">家族旅行</span></div>
+
+      <div class="day-header">4/27(月)</div>
+      <div class="row"><span class="row-left">継続〜16:00</span><span class="row-right">家族旅行</span></div>
+    </div>
+  </div>
+
+  <div class="label">▼ 朝の通知（毎日7時）</div>
+  <div class="bubble">
+    <div class="bubble-header dawn">
+      <p class="title">おはようございます</p>
+      <p class="subtitle">4/21(火)</p>
+    </div>
+    <div class="bubble-body">
+      <div class="section">
+        <div class="section-header">■ 天気予報（東京）</div>
+        <hr class="separator">
+        <div class="row"><span class="row-left">今日</span><span class="row-right">くもり 時々 晴れ</span></div>
+        <div class="row"><span class="row-left">明日</span><span class="row-right">晴れ</span></div>
+        <div class="row"><span class="row-left">明後日</span><span class="row-right">晴れ 時々 くもり</span></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">■ 目標カウントダウン</div>
+        <hr class="separator">
+        <div class="row"><span class="row-left accent">あと 14日</span><span class="row-right">プロジェクト提出</span></div>
+        <div class="row"><span class="row-left accent">あと 45日</span><span class="row-right">資格試験</span></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">■ 期限が迫っているタスク</div>
+        <hr class="separator">
+        <div class="row"><span class="row-left">今日まで</span><span class="row-right">報告書の提出</span></div>
+        <div class="row"><span class="row-left">残り2日</span><span class="row-right">資料レビュー</span></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">■ 1週間後の予定</div>
+        <hr class="separator">
+        <div class="row"><span class="row-left">14:00〜15:00</span><span class="row-right">クライアントMTG</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="label">▼ 夜の通知（毎日20時）</div>
+  <div class="bubble">
+    <div class="bubble-header dusk">
+      <p class="title">明日の予定</p>
+      <p class="subtitle">4/22(水)</p>
+    </div>
+    <div class="bubble-body">
+      <div class="section">
+        <div class="section-header">■ 明日の予定</div>
+        <hr class="separator">
+        <div class="row"><span class="row-left">09:30〜10:30</span><span class="row-right">通院</span></div>
+        <div class="row"><span class="row-left">13:00〜14:30</span><span class="row-right">ランチ会</span></div>
+        <div class="row"><span class="row-left">終日</span><span class="row-right goal">★ プロジェクト提出</span></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">■ 明日のゴミ出し</div>
+        <hr class="separator">
+        <div style="font-size:13px;color:var(--brown-deep);margin-top:6px;">「燃えるごみ」の日です</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <h3>補足</h3>
+    このプレビューは HTML/CSS による近似表示です。実際の LINE Flex Message では若干レンダリングが異なる可能性があります（フォント、余白の微調整等）。<br>
+    ピクセル単位の正確な確認をしたい場合は
+    <a href="https://developers.line.biz/flex-simulator/" target="_blank">LINE Flex Simulator</a>
+    に JSON を貼り付けて確認してください。コード内 <code>sendLinePayload(...)</code> と <code>pushLinePayload(...)</code> に渡している第2引数が Flex Message 本体です。
+  </div>
+
+</div>
+
+</body>
+</html>
