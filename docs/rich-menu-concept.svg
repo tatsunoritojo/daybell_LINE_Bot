@@ -1,111 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2500 1686" width="2500" height="1686">
-  <title>予定お知らせ君 リッチメニュー コンセプト</title>
-  <desc>LINE Messaging API リッチメニュー用 (2500×1686, 3×2グリッド)。上段=朝焼け / 下段=夕暮れ のテーマ</desc>
+  <title>予定お知らせ君 リッチメニュー コンセプト (minimal / 上下2分割)</title>
+  <desc>LINE Messaging API リッチメニュー用。上段=目標設定 / 下段=予定確認（直近1週間）。温かみのあるクリーム単色ベースのミニマル構成。</desc>
 
-  <defs>
-    <linearGradient id="dayGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#FFE8BC"/>
-      <stop offset="55%" stop-color="#FFCE89"/>
-      <stop offset="100%" stop-color="#F5A97A"/>
-    </linearGradient>
-    <linearGradient id="nightGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#4A6590"/>
-      <stop offset="55%" stop-color="#2F4868"/>
-      <stop offset="100%" stop-color="#1A2940"/>
-    </linearGradient>
-  </defs>
+  <!-- 背景: クリーム単色 -->
+  <rect width="2500" height="1686" fill="#F5EDD9"/>
 
-  <!-- 背景: 上段(朝) / 下段(夜) -->
-  <rect x="0" y="0"   width="2500" height="843" fill="url(#dayGrad)"/>
-  <rect x="0" y="843" width="2500" height="843" fill="url(#nightGrad)"/>
+  <!-- 中央の区切り線 (控えめ) -->
+  <line x1="300" y1="843" x2="2200" y2="843" stroke="#C9B88F" stroke-width="2"/>
 
-  <!-- グリッド分割線 (半透明白) -->
-  <g stroke="#FFFFFF" stroke-width="3" opacity="0.45">
-    <line x1="833"  y1="0" x2="833"  y2="1686"/>
-    <line x1="1667" y1="0" x2="1667" y2="1686"/>
-    <line x1="0" y1="843" x2="2500" y2="843"/>
+  <!-- ================================================ -->
+  <!-- 上段 (0-843) : 目標設定 -->
+  <!-- ================================================ -->
+  <g transform="translate(1250, 370)" stroke="#4A3A1F" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 旗のポール -->
+    <line x1="-100" y1="-170" x2="-100" y2="180" stroke-width="12"/>
+    <!-- 旗の布 -->
+    <path d="M -100,-170 L 130,-125 L 70,-55 L 130,15 L -100,-30 Z" stroke-width="12"/>
+    <!-- 台座 -->
+    <line x1="-160" y1="180" x2="-40" y2="180" stroke-width="12"/>
   </g>
+  <text x="1250" y="680" text-anchor="middle"
+        font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif"
+        font-size="150" font-weight="700" fill="#3D2510" letter-spacing="24">目標設定</text>
 
   <!-- ================================================ -->
-  <!-- セル1 (0-833, 0-843) : 新規登録 -->
+  <!-- 下段 (843-1686) : 予定確認 -->
   <!-- ================================================ -->
-  <g transform="translate(416, 360)">
-    <rect x="-130" y="-100" width="260" height="230" rx="22" fill="none" stroke="#3D2510" stroke-width="12"/>
-    <line x1="-130" y1="-40" x2="130" y2="-40" stroke="#3D2510" stroke-width="10"/>
-    <line x1="-80"  y1="-130" x2="-80" y2="-70" stroke="#3D2510" stroke-width="14" stroke-linecap="round"/>
-    <line x1="80"   y1="-130" x2="80"  y2="-70" stroke="#3D2510" stroke-width="14" stroke-linecap="round"/>
-    <circle cx="100" cy="110" r="50" fill="#E85D3B"/>
-    <line x1="76" y1="110" x2="124" y2="110" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round"/>
-    <line x1="100" y1="86" x2="100" y2="134" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round"/>
+  <g transform="translate(1250, 1213)" stroke="#4A3A1F" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- カレンダー本体 -->
+    <rect x="-160" y="-130" width="320" height="270" rx="18" stroke-width="12"/>
+    <!-- ヘッダー区切り -->
+    <line x1="-160" y1="-55" x2="160" y2="-55" stroke-width="10"/>
+    <!-- リング -->
+    <line x1="-90" y1="-160" x2="-90" y2="-95" stroke-width="14"/>
+    <line x1="90"  y1="-160" x2="90"  y2="-95" stroke-width="14"/>
+    <!-- 予定の行 -->
+    <line x1="-105" y1="5"   x2="105" y2="5"   stroke-width="8"/>
+    <line x1="-105" y1="55"  x2="65"  y2="55"  stroke-width="8"/>
+    <line x1="-105" y1="105" x2="25"  y2="105" stroke-width="8"/>
   </g>
-  <text x="416" y="650" text-anchor="middle" font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="110" font-weight="700" fill="#3D2510">新規登録</text>
-  <text x="416" y="720" text-anchor="middle" font-family="'Helvetica Neue',sans-serif" font-size="44" fill="#6B4020" letter-spacing="6">CREATE</text>
-
-  <!-- ================================================ -->
-  <!-- セル2 (833-1666, 0-843) : 目標設定 -->
-  <!-- ================================================ -->
-  <g transform="translate(1250, 360)">
-    <line x1="-90" y1="-140" x2="-90" y2="150" stroke="#3D2510" stroke-width="14" stroke-linecap="round"/>
-    <ellipse cx="-90" cy="155" rx="55" ry="12" fill="#3D2510"/>
-    <path d="M -90,-140 L 120,-100 L 60,-40 L 120,20 L -90,-20 Z"
-          fill="#E85D3B" stroke="#3D2510" stroke-width="6" stroke-linejoin="round"/>
-  </g>
-  <text x="1250" y="650" text-anchor="middle" font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="110" font-weight="700" fill="#3D2510">目標設定</text>
-  <text x="1250" y="720" text-anchor="middle" font-family="'Helvetica Neue',sans-serif" font-size="44" fill="#6B4020" letter-spacing="6">GOAL</text>
-
-  <!-- ================================================ -->
-  <!-- セル3 (1667-2500, 0-843) : 目標確認 -->
-  <!-- ================================================ -->
-  <g transform="translate(2083, 360)">
-    <path d="M -90,-130 L 90,-130 L 90,-95 L 15,-10 L 90,95 L 90,130 L -90,130 L -90,95 L -15,-10 L -90,-95 Z"
-          fill="none" stroke="#3D2510" stroke-width="12" stroke-linejoin="round"/>
-    <path d="M -70,-112 L 70,-112 L 12,-30 L -12,-30 Z" fill="#E85D3B"/>
-    <path d="M -12,30 L 12,30 L 70,112 L -70,112 Z" fill="#E85D3B" opacity="0.45"/>
-  </g>
-  <text x="2083" y="650" text-anchor="middle" font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="110" font-weight="700" fill="#3D2510">目標確認</text>
-  <text x="2083" y="720" text-anchor="middle" font-family="'Helvetica Neue',sans-serif" font-size="44" fill="#6B4020" letter-spacing="6">PROGRESS</text>
-
-  <!-- ================================================ -->
-  <!-- セル4 (0-833, 843-1686) : 今日の予定 -->
-  <!-- ================================================ -->
-  <g transform="translate(416, 1203)">
-    <rect x="-140" y="-110" width="280" height="240" rx="22" fill="none" stroke="#F5E5C8" stroke-width="10"/>
-    <rect x="-140" y="-110" width="280" height="70" rx="22" fill="#F5E5C8"/>
-    <rect x="-140" y="-75"  width="280" height="35" fill="#F5E5C8"/>
-    <line x1="-100" y1="-10" x2="100" y2="-10" stroke="#F5E5C8" stroke-width="8" stroke-linecap="round"/>
-    <line x1="-100" y1="30"  x2="80"  y2="30"  stroke="#F5E5C8" stroke-width="8" stroke-linecap="round"/>
-    <line x1="-100" y1="70"  x2="50"  y2="70"  stroke="#F5E5C8" stroke-width="8" stroke-linecap="round"/>
-    <circle cx="110" cy="-110" r="56" fill="#FFCE89"/>
-    <text x="110" y="-90" text-anchor="middle" font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="70" font-weight="900" fill="#3D2510">今</text>
-  </g>
-  <text x="416" y="1493" text-anchor="middle" font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="110" font-weight="700" fill="#F5E5C8">今日の予定</text>
-  <text x="416" y="1563" text-anchor="middle" font-family="'Helvetica Neue',sans-serif" font-size="44" fill="#BAC9DD" letter-spacing="6">TODAY</text>
-
-  <!-- ================================================ -->
-  <!-- セル5 (833-1666, 843-1686) : 明日の予定 -->
-  <!-- ================================================ -->
-  <g transform="translate(1250, 1203)">
-    <rect x="-140" y="-110" width="280" height="240" rx="22" fill="none" stroke="#F5E5C8" stroke-width="10"/>
-    <rect x="-140" y="-110" width="280" height="70" rx="22" fill="#F5E5C8"/>
-    <rect x="-140" y="-75"  width="280" height="35" fill="#F5E5C8"/>
-    <line x1="-100" y1="-10" x2="100" y2="-10" stroke="#F5E5C8" stroke-width="8" stroke-linecap="round"/>
-    <line x1="-100" y1="30"  x2="80"  y2="30"  stroke="#F5E5C8" stroke-width="8" stroke-linecap="round"/>
-    <line x1="-100" y1="70"  x2="50"  y2="70"  stroke="#F5E5C8" stroke-width="8" stroke-linecap="round"/>
-    <circle cx="110" cy="-110" r="56" fill="#8FB0D9"/>
-    <text x="110" y="-90" text-anchor="middle" font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="70" font-weight="900" fill="#1A2940">明</text>
-  </g>
-  <text x="1250" y="1493" text-anchor="middle" font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="110" font-weight="700" fill="#F5E5C8">明日の予定</text>
-  <text x="1250" y="1563" text-anchor="middle" font-family="'Helvetica Neue',sans-serif" font-size="44" fill="#BAC9DD" letter-spacing="6">TOMORROW</text>
-
-  <!-- ================================================ -->
-  <!-- セル6 (1667-2500, 843-1686) : ヘルプ -->
-  <!-- ================================================ -->
-  <g transform="translate(2083, 1203)">
-    <path d="M -140,-110 Q -140,-150 -100,-150 L 120,-150 Q 160,-150 160,-110 L 160,40 Q 160,80 120,80 L 20,80 L -30,130 L -20,80 L -100,80 Q -140,80 -140,40 Z"
-          fill="#F5E5C8" stroke="none"/>
-    <text x="10" y="20" text-anchor="middle" font-family="'Helvetica Neue',sans-serif" font-size="180" font-weight="900" fill="#3D2510">?</text>
-  </g>
-  <text x="2083" y="1493" text-anchor="middle" font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="110" font-weight="700" fill="#F5E5C8">ヘルプ</text>
-  <text x="2083" y="1563" text-anchor="middle" font-family="'Helvetica Neue',sans-serif" font-size="44" fill="#BAC9DD" letter-spacing="6">HELP</text>
+  <text x="1250" y="1523" text-anchor="middle"
+        font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif"
+        font-size="150" font-weight="700" fill="#3D2510" letter-spacing="24">予定確認</text>
 </svg>
