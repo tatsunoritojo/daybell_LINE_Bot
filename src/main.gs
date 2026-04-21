@@ -17,48 +17,78 @@ function doPost(e) {
   try {
     const events = JSON.parse(e.postData.contents).events;
     if (!events || events.length === 0) return;
-    const event = events[0];
 
-    // 送信元ユーザーIDチェック
-    const sourceUserId = event.source && event.source.userId;
-    if (sourceUserId !== LINE_USER_ID) {
-      console.log('Rejected unauthorized userId: ' + sourceUserId);
+    // LINEは1つのWebhookに複数イベントを詰めて送ることがある（検証Webhook・再送等）。
+    // イベントごとに独立して処理し、1件のエラーで以降を止めないようtry/catchで囲む
+    for (let i = 0; i < events.length; i++) {
+      try {
+        handleWebhookEvent(events[i]);
+      } catch (err) {
+        console.error('event handler error: ' + (err && err.message ? err.message : err));
+      }
+    }
+  } catch (err) {
+    console.error('doPost error: ' + (err && err.message ? err.message : err));
+  }
+}
+
+function handleWebhookEvent(event) {
+  // 送信元ユーザーIDチェック
+  const sourceUserId = event.source && event.source.userId;
+  if (sourceUserId !== LINE_USER_ID) {
+    console.log('Rejected unauthorized userId: ' + sourceUserId);
+    return;
+  }
+
+  const replyToken = event.replyToken;
+
+  // --- A. メッセージ受信時の処理 ---
+  if (event.type === 'message') {
+    // テキスト以外（画像・スタンプ・位置情報等）は対応外として案内を返す
+    if (event.message.type !== 'text') {
+      if (replyToken) replyLineMessage(replyToken, 'テキストメッセージで送ってください。');
       return;
     }
+    const userMessage = event.message.text;
 
-    const replyToken = event.replyToken;
-
-    // --- A. メッセージ受信時の処理 ---
-    if (event.type === 'message') {
-      const userMessage = event.message.text;
-
-      if (userMessage === '目標設定') {
-        clearTaskSession();
-        showGoalSelection(replyToken);
-      }
-      else if (userMessage === '予定確認') {
-        clearTaskSession();
-        replyUpcomingWeekSchedule(replyToken);
-      }
-      else if (userMessage.startsWith('これを目標にする：')) {
-        handleGoalConfirmation(replyToken, userMessage);
-      }
-      else {
-        // タスク登録フロー開始。既存セッションがあっても新メッセージで上書きし、
-        // 古い開始/終了ピッカーのボタンは以降のポストバックで無視される
-        setTaskSession({ step: 'awaitingStart', taskName: userMessage });
-        sendStartDateTimePicker(replyToken, userMessage);
-      }
+    if (userMessage === '目標設定') {
+      clearTaskSession();
+      showGoalSelection(replyToken);
     }
+    else if (userMessage === '予定確認') {
+      clearTaskSession();
+      replyUpcomingWeekSchedule(replyToken);
+    }
+    else if (userMessage.startsWith('これを目標にする：')) {
+      handleGoalConfirmation(replyToken, userMessage);
+    }
+    else {
+      // タスク登録フロー開始。既存セッションがあっても新メッセージで上書きし、
+      // 古い開始/終了ピッカーのボタンは以降のポストバックで無視される
+      setTaskSession({ step: 'awaitingStart', taskName: userMessage });
+      sendStartDateTimePicker(replyToken, userMessage);
+    }
+  }
 
-    // --- B. ポストバック（GUI操作）受信時の処理 ---
-    else if (event.type === 'postback') {
-      const data = event.postback.data;
-      const params = data.split('&').reduce((acc, cur) => {
-        const [key, val] = cur.split('=');
-        acc[key] = val;
-        return acc;
-      }, {});
+  // --- B. ポストバック（GUI操作）受信時の処理 ---
+  else if (event.type === 'postback') {
+    const data = event.postback.data;
+    const params = data.split('&').reduce((acc, cur) => {
+      const [key, val] = cur.split('=');
+      acc[key] = val;
+      return acc;
+    }, {});
+
+    // ほぼ同時発火の連打・再試行で getTaskSession() の読み取り → 更新が
+    // 二重に走らないよう、セッション読み書きと登録処理全体を排他化する
+    const lock = LockService.getScriptLock();
+    let acquired = false;
+    try {
+      acquired = lock.tryLock(10000);
+      if (!acquired) {
+        console.log('Could not acquire lock within 10s, skipping postback. action=' + params.action);
+        return;
+      }
 
       const session = getTaskSession();
       if (!session) {
@@ -83,17 +113,20 @@ function doPost(e) {
       }
       else if (params.action === 'finalRegister' && session.step === 'awaitingConfirm') {
         const isGoal = params.isGoal === 'true';
-        // 登録前にセッションをクリア。万一二重発火しても後続は session=null で弾かれる
+        // 登録前にセッションをクリア。後続の二重発火は session=null で弾かれる
         clearTaskSession();
         executeFinalRegistration(replyToken, session.taskName, session.startTime, session.endTime, isGoal);
       }
       else {
         console.log('Ignoring stale/out-of-order postback. action=' + params.action + ', step=' + session.step);
       }
+    } finally {
+      if (acquired) {
+        try { lock.releaseLock(); } catch (e) { /* ignore */ }
+      }
     }
-  } catch (err) {
-    console.error('doPost error: ' + (err && err.message ? err.message : err));
   }
+  // 他のイベントタイプ（follow / unfollow / join / leave 等）は単に無視する
 }
 
 // タスク登録フローのセッション管理（PropertiesServiceで永続化）
@@ -175,10 +208,29 @@ function sendFinalGoalConfirm(replyToken) {
 // 複数日（開始日と終了日が2日以上離れている）の場合は時間指定ではなく終日イベントとして登録する。
 // GASの createAllDayEvent(startDate, endDateExclusive) を使うと GCal の上部バーにきれいに収まる
 function executeFinalRegistration(replyToken, taskName, startTimeStr, endTimeStr, isGoal) {
+  // サーバー側バリデーション（UI側のガードが効かないケースに備える防衛線）
+  if (!taskName || taskName.trim().length === 0) {
+    replyLineMessage(replyToken, 'タスク名が空です。最初からやり直してください。');
+    return;
+  }
+  if (taskName.length > 200) {
+    replyLineMessage(replyToken, 'タスク名が長すぎます（200文字以内）。最初からやり直してください。');
+    return;
+  }
   const startDt = new Date(startTimeStr);
   const endDt = new Date(endTimeStr);
+  if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) {
+    replyLineMessage(replyToken, '日時を解析できませんでした。最初からやり直してください。');
+    return;
+  }
+  if (endDt.getTime() <= startDt.getTime()) {
+    replyLineMessage(replyToken, '終了時刻は開始時刻より後に設定してください。最初からやり直してください。');
+    return;
+  }
+  // 既存タイトルに prefix が含まれている場合は剥がしてから付け直す
+  const baseTaskName = stripTitlePrefixes(taskName);
   const prefix = isGoal ? '【目標】' : '【タスク】';
-  const title = prefix + taskName;
+  const title = prefix + baseTaskName;
   const calendar = CalendarApp.getDefaultCalendar();
 
   // JST基準で日付単位の差を計算
@@ -245,11 +297,22 @@ function handleGoalConfirmation(replyToken, userMessage) {
   const events = CalendarApp.getDefaultCalendar().getEvents(new Date(), new Date(new Date().setMonth(new Date().getMonth() + 6)));
   for (let i = 0; i < events.length; i++) {
     if (events[i].getTitle() === targetTitle) {
-      events[i].setTitle('【目標】' + targetTitle);
-      replyLineMessage(replyToken, "「" + targetTitle + "」を目標に設定しました。");
+      // 既に【タスク】や【目標】が付いていたら一度剥がしてから【目標】を付け直す。
+      // これを怠ると「【目標】【タスク】○○」のような多重プレフィックスが発生する
+      const baseTitle = stripTitlePrefixes(targetTitle);
+      events[i].setTitle('【目標】' + baseTitle);
+      replyLineMessage(replyToken, "「" + baseTitle + "」を目標に設定しました。");
       return;
     }
   }
+  // 一致するイベントが見つからなかった場合に無言で終わらないよう、案内を返す
+  replyLineMessage(replyToken, "予定が見つかりませんでした。時間経過で候補外になった可能性があります。もう一度「目標設定」を送ってください。");
+}
+
+// タイトル先頭の【目標】/【タスク】を取り除く。どちらも付いていない場合はそのまま返す。
+// prefix の多重付与（例: 【目標】【タスク】○○）を防ぐために使う
+function stripTitlePrefixes(title) {
+  return title.replace(/^【目標】/, '').replace(/^【タスク】/, '');
 }
 
 // リッチメニュー「予定確認」から呼ばれる：今日から7日分の予定をFlex Messageで返す
