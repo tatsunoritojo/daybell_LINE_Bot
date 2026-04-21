@@ -166,7 +166,7 @@ function showGoalSelection(replyToken) {
   let items = [];
   for (let i = 0; i < Math.min(events.length, 13); i++) {
     const title = events[i].getTitle();
-    if (!title.includes('ごみ') && !title.includes('【目標】')) {
+    if (!title.includes('【リマインド】') && !title.includes('【目標】')) {
       items.push({ "type": "action", "action": { "type": "message", "label": title.substring(0, 20), "text": "これを目標にする：" + title } });
     }
   }
@@ -202,7 +202,8 @@ function replyUpcomingWeekSchedule(replyToken) {
     const rawEvents = calendar.getEventsForDay(d);
     const events = [];
     for (let k = 0; k < rawEvents.length; k++) {
-      if (!rawEvents[k].getTitle().includes('ごみ')) events.push(rawEvents[k]);
+      // リマインダーは予定一覧には含めない（夜の通知で別途扱う）
+      if (!rawEvents[k].getTitle().includes('【リマインド】')) events.push(rawEvents[k]);
     }
     if (events.length === 0) continue;
     hasAny = true;
@@ -297,7 +298,7 @@ function notifyMorning() {
         milestones.push({ title: title.replace('【目標】', ''), days: diffDays });
       } else if (title.includes('【タスク】') && diffDays >= 0 && diffDays <= 3) {
         tasks.push({ title: title.replace('【タスク】', ''), days: diffDays });
-      } else if (diffDays === 7 && !title.includes('ごみ')) {
+      } else if (diffDays === 7 && !title.includes('【リマインド】')) {
         nextWeek.push({
           title: title,
           time: formatEventTime(event, eventDate)
@@ -375,12 +376,12 @@ function notifyNight() {
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(0, 0, 0, 0);
     const events = CalendarApp.getDefaultCalendar().getEventsForDay(tomorrow);
-    let garbageList = [], scheduleList = [];
+    let reminderList = [], scheduleList = [];
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
       const title = event.getTitle();
-      if (title.includes('ごみ')) {
-        garbageList.push(title);
+      if (title.includes('【リマインド】')) {
+        reminderList.push(title.replace('【リマインド】', ''));
       } else {
         const isGoal = title.includes('【目標】');
         const cleanTitle = title.replace('【目標】', '').replace('【タスク】', '');
@@ -413,13 +414,15 @@ function notifyNight() {
       bodyContents.push({ "type": "text", "text": "特にありません。", "size": "sm", "color": "#999999", "margin": "xs" });
     }
 
-    if (garbageList.length > 0) {
-      bodyContents.push(makeSectionHeader('■ 明日のゴミ出し'));
-      bodyContents.push({
-        "type": "text",
-        "text": '「' + garbageList.join('と') + '」の日です',
-        "size": "sm", "color": "#3D2510", "margin": "xs", "wrap": true
-      });
+    if (reminderList.length > 0) {
+      bodyContents.push(makeSectionHeader('■ 明日のリマインダー'));
+      for (let i = 0; i < reminderList.length; i++) {
+        bodyContents.push({
+          "type": "text",
+          "text": '・' + reminderList[i],
+          "size": "sm", "color": "#3D2510", "margin": "xs", "wrap": true
+        });
+      }
     }
 
     pushLinePayload({
