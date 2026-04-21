@@ -18,6 +18,9 @@ function doPost(e) {
     if (userMessage === '目標設定') {
       showGoalSelection(replyToken);
     }
+    else if (userMessage === '予定確認') {
+      replyUpcomingWeekSchedule(replyToken);
+    }
     else if (userMessage.startsWith('これを目標にする：')) {
       handleGoalConfirmation(replyToken, userMessage);
     }
@@ -159,6 +162,60 @@ function handleGoalConfirmation(replyToken, userMessage) {
       return;
     }
   }
+}
+
+// リッチメニュー「予定確認」から呼ばれる：今日から7日分の予定を日付ごとに整形して返す
+function replyUpcomingWeekSchedule(replyToken) {
+  const calendar = CalendarApp.getDefaultCalendar();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const rangeEnd = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+  rangeEnd.setHours(23, 59, 59, 999);
+
+  const events = calendar.getEvents(today, rangeEnd);
+
+  // 日付(yyyy-MM-dd)をキーにイベントをグルーピング。ごみ予定は除外
+  const eventsByDate = {};
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    if (event.getTitle().includes('ごみ')) continue;
+    const dateKey = Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'yyyy-MM-dd');
+    if (!eventsByDate[dateKey]) eventsByDate[dateKey] = [];
+    eventsByDate[dateKey].push(event);
+  }
+
+  const weekDayLabels = ['日', '月', '火', '水', '木', '金', '土'];
+  let message = '📆 【今後1週間の予定】\n\n';
+  let hasAny = false;
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
+    const dateKey = Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+    const specialLabel = i === 0 ? ' (今日)' : i === 1 ? ' (明日)' : '';
+    const header = '■ ' + Utilities.formatDate(d, 'Asia/Tokyo', 'M/d') + '(' + weekDayLabels[d.getDay()] + ')' + specialLabel;
+
+    const dayEvents = eventsByDate[dateKey];
+    if (!dayEvents || dayEvents.length === 0) continue;
+
+    hasAny = true;
+    message += header + '\n';
+    for (let j = 0; j < dayEvents.length; j++) {
+      const event = dayEvents[j];
+      // 目標・タスクのプレフィックスを見やすく変換
+      let title = event.getTitle().replace('【目標】', '🚩 ').replace('【タスク】', '');
+      if (event.isAllDayEvent()) {
+        message += '  ・終日: ' + title + '\n';
+      } else {
+        const time = Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm');
+        message += '  ・' + time + ' ' + title + '\n';
+      }
+    }
+    message += '\n';
+  }
+
+  if (!hasAny) message += '今後1週間の予定はありません。';
+
+  replyLineMessage(replyToken, message);
 }
 
 function notifyMorning() {
