@@ -100,10 +100,17 @@ function handleWebhookEvent(event) {
       handleGoalConfirmation(replyToken, userMessage);
     }
     else {
-      // タスク登録フロー開始。既存セッションがあっても新メッセージで上書きし、
-      // 古い開始/終了ピッカーのボタンは以降のポストバックで無視される
-      setTaskSession({ step: 'awaitingStart', taskName: userMessage });
-      sendStartDateTimePicker(replyToken, userMessage);
+      // タスク登録フロー開始。flowId + stepToken を発行してボタンに埋め込む。
+      // 既存セッションは新メッセージで上書きされ、古いボタンはtoken不一致で弾かれる
+      const flowId = generateToken();
+      const stepToken = generateToken();
+      setTaskSession({
+        step: 'awaitingStart',
+        taskName: userMessage,
+        flowId: flowId,
+        stepToken: stepToken
+      });
+      sendStartDateTimePicker(replyToken, userMessage, flowId, stepToken);
     }
   }
 
@@ -116,8 +123,7 @@ function handleWebhookEvent(event) {
       return acc;
     }, {});
 
-    // ほぼ同時発火の連打・再試行で getTaskSession() の読み取り → 更新が
-    // 二重に走らないよう、セッション読み書きと登録処理全体を排他化する
+    // 排他制御: 同時連打・再試行による状態競合を防ぐ
     const lock = LockService.getScriptLock();
     let acquired = false;
     try {
@@ -127,28 +133,56 @@ function handleWebhookEvent(event) {
         return;
       }
 
+      // 消費済みトークン（= 既に押されたボタン）は二重処理しない
+      if (params.token && isTokenConsumed(params.token)) {
+        console.log('Token already consumed: ' + params.token);
+        if (replyToken) replyLineMessage(replyToken, 'このボタンはすでに処理済みです。最初からやり直してください。');
+        return;
+      }
+
       const session = getTaskSession();
       if (!session) {
         console.log('Ignoring postback: no active session. action=' + params.action);
+        if (replyToken) replyLineMessage(replyToken, 'タスク登録フローの有効期限が切れました。最初からタスク名を送ってください。');
+        return;
+      }
+
+      // セッションとのトークン整合性チェック（flowId + stepToken 両方一致する必要あり）
+      if (!params.token || session.flowId !== params.flowId || session.stepToken !== params.token) {
+        console.log('Token mismatch. action=' + params.action + ', session.step=' + session.step);
+        if (replyToken) replyLineMessage(replyToken, 'このボタンは期限切れです。最新のフローを進めてください。');
         return;
       }
 
       if (params.action === 'setStart' && session.step === 'awaitingStart') {
+        consumeToken(params.token);
         const startTime = event.postback.params.datetime;
-        setTaskSession({ step: 'awaitingEnd', taskName: session.taskName, startTime: startTime });
-        sendEndDateTimePicker(replyToken, session.taskName, startTime);
+        const nextToken = generateToken();
+        setTaskSession({
+          step: 'awaitingEnd',
+          taskName: session.taskName,
+          startTime: startTime,
+          flowId: session.flowId,
+          stepToken: nextToken
+        });
+        sendEndDateTimePicker(replyToken, session.taskName, startTime, session.flowId, nextToken);
       }
       else if (params.action === 'setEnd' && session.step === 'awaitingEnd') {
+        consumeToken(params.token);
         const endTime = event.postback.params.datetime;
+        const nextToken = generateToken();
         setTaskSession({
           step: 'awaitingConfirm',
           taskName: session.taskName,
           startTime: session.startTime,
-          endTime: endTime
+          endTime: endTime,
+          flowId: session.flowId,
+          stepToken: nextToken
         });
-        sendFinalGoalConfirm(replyToken);
+        sendFinalGoalConfirm(replyToken, session.flowId, nextToken);
       }
       else if (params.action === 'finalRegister' && session.step === 'awaitingConfirm') {
+        consumeToken(params.token);
         const isGoal = params.isGoal === 'true';
         // 登録前にセッションをクリア。後続の二重発火は session=null で弾かれる
         clearTaskSession();
@@ -156,6 +190,7 @@ function handleWebhookEvent(event) {
       }
       else {
         console.log('Ignoring stale/out-of-order postback. action=' + params.action + ', step=' + session.step);
+        if (replyToken) replyLineMessage(replyToken, '操作の順序が一致しません。最初からやり直してください。');
       }
     } finally {
       if (acquired) {
@@ -167,6 +202,9 @@ function handleWebhookEvent(event) {
 }
 
 // タスク登録フローのセッション管理（PropertiesServiceで永続化）
+// session: { step, taskName, startTime?, endTime?, flowId, stepToken }
+// - flowId: フロー全体を識別するID（新規メッセージで再発行）
+// - stepToken: ステップ毎に発行する one-time トークン（ボタン1個に1個）
 const TASK_SESSION_KEY = 'task_session';
 
 function getTaskSession() {
@@ -182,12 +220,28 @@ function clearTaskSession() {
   PropertiesService.getScriptProperties().deleteProperty(TASK_SESSION_KEY);
 }
 
+// UUID の先頭12文字を使った短めのトークン。衝突確率は実用上無視できる
+function generateToken() {
+  return Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+}
+
+// トークンを『使用済み』としてCacheServiceに記録する。TTL 10分で自動消滅。
+// CacheService は永続保証がないため補助的な重複検知として使う
+//（本線の検証は session.stepToken との一致チェック）
+function consumeToken(token) {
+  CacheService.getScriptCache().put('used_token:' + token, '1', 600);
+}
+
+function isTokenConsumed(token) {
+  return CacheService.getScriptCache().get('used_token:' + token) !== null;
+}
+
 // ==========================================
 // ロジック関数：タスクGUI登録（対話ステップ）
 // ==========================================
 
 // ステップ1：開始時間をきく
-function sendStartDateTimePicker(replyToken, taskName) {
+function sendStartDateTimePicker(replyToken, taskName, flowId, stepToken) {
   sendLinePayload(replyToken, {
     'type': 'template',
     'altText': '開始時間を選択してください',
@@ -197,7 +251,7 @@ function sendStartDateTimePicker(replyToken, taskName) {
       'actions': [{
         'type': 'datetimepicker',
         'label': 'カレンダーを開く',
-        'data': 'action=setStart',
+        'data': 'action=setStart&flowId=' + flowId + '&token=' + stepToken,
         'mode': 'datetime'
       }]
     }
@@ -205,7 +259,7 @@ function sendStartDateTimePicker(replyToken, taskName) {
 }
 
 // ステップ2：終了時間をきく
-function sendEndDateTimePicker(replyToken, taskName, startTime) {
+function sendEndDateTimePicker(replyToken, taskName, startTime, flowId, stepToken) {
   sendLinePayload(replyToken, {
     'type': 'template',
     'altText': '終了時間を選択してください',
@@ -215,7 +269,7 @@ function sendEndDateTimePicker(replyToken, taskName, startTime) {
       'actions': [{
         'type': 'datetimepicker',
         'label': 'カレンダーを開く',
-        'data': 'action=setEnd',
+        'data': 'action=setEnd&flowId=' + flowId + '&token=' + stepToken,
         'mode': 'datetime',
         // 開始時刻より前を選べないようにガード
         'min': startTime,
@@ -226,7 +280,9 @@ function sendEndDateTimePicker(replyToken, taskName, startTime) {
 }
 
 // ステップ3：目標にするか確認する
-function sendFinalGoalConfirm(replyToken) {
+// はい/いいえ は同じステップの分岐なので stepToken を共有。先にタップされた方が消費し、
+// もう一方はトークン消費済み判定で弾かれる（=片方のみ登録）
+function sendFinalGoalConfirm(replyToken, flowId, stepToken) {
   sendLinePayload(replyToken, {
     'type': 'template',
     'altText': '目標に設定しますか？',
@@ -234,8 +290,8 @@ function sendFinalGoalConfirm(replyToken) {
       'type': 'confirm',
       'text': 'このタスクを「重要目標（カウントダウン対象）」として登録しますか？',
       'actions': [
-        { 'type': 'postback', 'label': 'はい', 'data': 'action=finalRegister&isGoal=true' },
-        { 'type': 'postback', 'label': 'いいえ', 'data': 'action=finalRegister&isGoal=false' }
+        { 'type': 'postback', 'label': 'はい', 'data': 'action=finalRegister&isGoal=true&flowId=' + flowId + '&token=' + stepToken },
+        { 'type': 'postback', 'label': 'いいえ', 'data': 'action=finalRegister&isGoal=false&flowId=' + flowId + '&token=' + stepToken }
       ]
     }
   });
