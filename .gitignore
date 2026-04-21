@@ -7,9 +7,13 @@ Thumbs.db
 .idea/
 *.swp
 
-# clasp（GAS CLI を使う場合）
+# clasp（GAS CLI）
+# .clasp.json は Script ID を含むので各自で作成する（.clasp.json.example を参照）
 .clasp.json
 .clasprc.json
+
+# Node.js (claspインストール用)
+node_modules/
 
 # 秘密情報を誤コミットしないように
 *.secret

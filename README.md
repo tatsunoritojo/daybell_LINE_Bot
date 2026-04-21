@@ -97,7 +97,8 @@ const LINE_USER_ID = 'ここにユーザーIDを貼り付けます';
 | ユーザー操作 | ボットの動き |
 |---|---|
 | 任意のメッセージを送る（例:「買い物」） | タスク名として扱い、開始時間 → 終了時間 → 目標フラグを対話式で聞いてカレンダーに登録 |
-| `目標設定` と送る | 直近半年のカレンダー予定から目標を選択するメニューを表示 |
+| `目標設定` と送る（リッチメニュー上段） | 直近半年のカレンダー予定から目標を選択するメニューを表示 |
+| `予定確認` と送る（リッチメニュー下段） | 今日から7日間の予定を日付ごとにまとめて表示 |
 | 何もしない（毎朝7時） | 天気 + 目標カウントダウン + 今日のタスク + 1週間後の予定を自動配信 |
 | 何もしない（毎晩20時） | 翌日の予定とゴミ出し情報を自動配信 |
 
@@ -131,6 +132,62 @@ UrlFetchApp.fetch('https://www.jma.go.jp/bosai/forecast/data/forecast/130000.jso
 ### 使うカレンダーを変える
 
 デフォルトカレンダー以外を使いたい場合は、`CalendarApp.getDefaultCalendar()` を `CalendarApp.getCalendarById('xxxxx@group.calendar.google.com')` に置き換えてください。
+
+---
+
+---
+
+## 開発者向け: clasp でのコード同期
+
+このリポジトリには [clasp](https://github.com/google/clasp)（Google Apps Script CLI）の設定が含まれています。ローカルで編集 → `npm run push` で GAS に反映、という開発フローが使えます。
+
+### 初回セットアップ
+
+```bash
+# 依存インストール
+npm install
+
+# Googleアカウントでログイン（ブラウザが開く）
+npx clasp login
+```
+
+### 既存のGASプロジェクトと同期する場合
+
+GASエディタ上部のURLに含まれる Script ID（`https://script.google.com/d/【ここ】/edit` の部分）を控えて、
+
+```bash
+# .clasp.json.example をコピーして編集
+cp .clasp.json.example .clasp.json
+# 中身の scriptId をあなたの Script ID に書き換える
+
+# 既存のGASコードをローカルに取り込み（上書きされるので注意）
+npx clasp pull
+```
+
+### 新しくGASプロジェクトを作る場合
+
+```bash
+npx clasp create --type standalone --title "予定お知らせ君" --rootDir src
+```
+
+### 日々の開発
+
+```bash
+npm run push     # ローカルのsrc/ をGASへアップロード
+npm run pull     # GAS上の変更をローカルへダウンロード
+npm run open     # ブラウザでGASエディタを開く
+npm run deploy   # Webアプリとして新バージョンをデプロイ
+```
+
+### ファイル構成
+
+```
+src/
+├── appsscript.json   # GAS マニフェスト（タイムゾーン・OAuthスコープ等）
+└── main.gs            # ボット本体
+```
+
+`.clasp.json`（Script ID を含む）と `.clasprc.json`（認証情報）は `.gitignore` 済みです。
 
 ---
 

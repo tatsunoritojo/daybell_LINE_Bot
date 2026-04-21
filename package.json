@@ -1,0 +1,17 @@
+{
+  "name": "daybell-line-bot",
+  "version": "1.0.0",
+  "description": "予定お知らせ君 LINEボット (Google Apps Script)",
+  "private": true,
+  "scripts": {
+    "login": "clasp login",
+    "pull": "clasp pull",
+    "push": "clasp push",
+    "deploy": "clasp deploy",
+    "open": "clasp open"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2"
+  },
+  "license": "MIT"
+}
