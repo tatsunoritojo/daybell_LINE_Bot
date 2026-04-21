@@ -8,54 +8,70 @@ const LINE_USER_ID = 'ここにユーザーIDを貼り付けます';
 // LINE Webhook処理
 // ==========================================
 function doPost(e) {
-  const event = JSON.parse(e.postData.contents).events[0];
-  const replyToken = event.replyToken;
+  try {
+    const events = JSON.parse(e.postData.contents).events;
+    if (!events || events.length === 0) return;
+    const event = events[0];
 
-  // --- A. メッセージ受信時の処理 ---
-  if (event.type === 'message') {
-    const userMessage = event.message.text;
+    // 送信元ユーザーIDチェック
+    // GAS の Webhook URL が万が一漏れた場合でも、攻撃者の userId は LINE_USER_ID と一致しないため拒否される。
+    // このチェックは本ボットが「本人1人専用」前提のため有効。複数ユーザー運用する場合は設計から見直すこと
+    const sourceUserId = event.source && event.source.userId;
+    if (sourceUserId !== LINE_USER_ID) {
+      console.log('Rejected unauthorized userId: ' + sourceUserId);
+      return;
+    }
 
-    if (userMessage === '目標設定') {
-      showGoalSelection(replyToken);
-    }
-    else if (userMessage === '予定確認') {
-      replyUpcomingWeekSchedule(replyToken);
-    }
-    else if (userMessage.startsWith('これを目標にする：')) {
-      handleGoalConfirmation(replyToken, userMessage);
-    }
-    else {
-      // 1. タスク名を受け取り、開始時間選択GUIを出す
-      sendStartDateTimePicker(replyToken, userMessage);
-    }
-  }
+    const replyToken = event.replyToken;
 
-  // --- B. ポストバック（GUI操作）受信時の処理 ---
-  else if (event.type === 'postback') {
-    const data = event.postback.data;
-    const params = data.split('&').reduce((acc, cur) => {
-      const [key, val] = cur.split('=');
-      acc[key] = val;
-      return acc;
-    }, {});
+    // --- A. メッセージ受信時の処理 ---
+    if (event.type === 'message') {
+      const userMessage = event.message.text;
 
-    if (params.action === 'setStart') {
-      // 2. 開始時間を受け取り、終了時間選択GUIを出す
-      const taskName = params.name;
-      const startTime = event.postback.params.datetime;
-      sendEndDateTimePicker(replyToken, taskName, startTime);
+      if (userMessage === '目標設定') {
+        showGoalSelection(replyToken);
+      }
+      else if (userMessage === '予定確認') {
+        replyUpcomingWeekSchedule(replyToken);
+      }
+      else if (userMessage.startsWith('これを目標にする：')) {
+        handleGoalConfirmation(replyToken, userMessage);
+      }
+      else {
+        // 1. タスク名を受け取り、開始時間選択GUIを出す
+        sendStartDateTimePicker(replyToken, userMessage);
+      }
     }
-    else if (params.action === 'setEnd') {
-      // 3. 終了時間を受け取り、目標にするか確認する
-      const taskName = params.name;
-      const startTime = params.start;
-      const endTime = event.postback.params.datetime;
-      sendFinalGoalConfirm(replyToken, taskName, startTime, endTime);
+
+    // --- B. ポストバック（GUI操作）受信時の処理 ---
+    else if (event.type === 'postback') {
+      const data = event.postback.data;
+      const params = data.split('&').reduce((acc, cur) => {
+        const [key, val] = cur.split('=');
+        acc[key] = val;
+        return acc;
+      }, {});
+
+      if (params.action === 'setStart') {
+        // 2. 開始時間を受け取り、終了時間選択GUIを出す
+        const taskName = params.name;
+        const startTime = event.postback.params.datetime;
+        sendEndDateTimePicker(replyToken, taskName, startTime);
+      }
+      else if (params.action === 'setEnd') {
+        // 3. 終了時間を受け取り、目標にするか確認する
+        const taskName = params.name;
+        const startTime = params.start;
+        const endTime = event.postback.params.datetime;
+        sendFinalGoalConfirm(replyToken, taskName, startTime, endTime);
+      }
+      else if (params.action === 'finalRegister') {
+        // 4. 最終登録実行
+        executeFinalRegistration(replyToken, params);
+      }
     }
-    else if (params.action === 'finalRegister') {
-      // 4. 最終登録実行
-      executeFinalRegistration(replyToken, params);
-    }
+  } catch (err) {
+    console.error('doPost error: ' + (err && err.message ? err.message : err));
   }
 }
 
@@ -219,45 +235,53 @@ function replyUpcomingWeekSchedule(replyToken) {
 }
 
 function notifyMorning() {
-  const calendar = CalendarApp.getDefaultCalendar();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const weatherMessage = getWeatherForecast();
-  const allEvents = calendar.getEvents(today, new Date(today.getTime() + 180 * 24 * 60 * 60 * 1000));
+  try {
+    const calendar = CalendarApp.getDefaultCalendar();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weatherMessage = getWeatherForecast();
+    const allEvents = calendar.getEvents(today, new Date(today.getTime() + 180 * 24 * 60 * 60 * 1000));
 
-  let milestoneMessages = [], taskMessages = [], nextWeekEvents = [];
-  for (let i = 0; i < allEvents.length; i++) {
-    const event = allEvents[i];
-    const title = event.getTitle();
-    const eventDate = new Date(event.getStartTime());
-    eventDate.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    let milestoneMessages = [], taskMessages = [], nextWeekEvents = [];
+    for (let i = 0; i < allEvents.length; i++) {
+      const event = allEvents[i];
+      const title = event.getTitle();
+      const eventDate = new Date(event.getStartTime());
+      eventDate.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-    if (title.includes('【目標】') && diffDays >= 0) milestoneMessages.push('🚩 ' + title.replace('【目標】', '') + ' まであと ' + diffDays + ' 日');
-    else if (title.includes('【タスク】') && diffDays >= 0 && diffDays <= 3) taskMessages.push(diffDays === 0 ? '・今日まで: ' + title.replace('【タスク】','') : '・残り' + diffDays + '日: ' + title.replace('【タスク】',''));
-    else if (diffDays === 7 && !title.includes('ごみ')) nextWeekEvents.push('・' + (event.isAllDayEvent() ? '終日' : Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm')) + ': ' + title);
+      if (title.includes('【目標】') && diffDays >= 0) milestoneMessages.push('🚩 ' + title.replace('【目標】', '') + ' まであと ' + diffDays + ' 日');
+      else if (title.includes('【タスク】') && diffDays >= 0 && diffDays <= 3) taskMessages.push(diffDays === 0 ? '・今日まで: ' + title.replace('【タスク】','') : '・残り' + diffDays + '日: ' + title.replace('【タスク】',''));
+      else if (diffDays === 7 && !title.includes('ごみ')) nextWeekEvents.push('・' + (event.isAllDayEvent() ? '終日' : Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm')) + ': ' + title);
+    }
+
+    let message = '☀️ おはようございます！\n現在の状況をお知らせします。\n\n' + weatherMessage;
+    if (milestoneMessages.length > 0) message += milestoneMessages.join('\n') + '\n\n';
+    message += '【期限が迫っているタスク】\n' + (taskMessages.length > 0 ? taskMessages.join('\n') : '現在はありません。') + '\n\n';
+    message += '【1週間後の予定】\n' + (nextWeekEvents.length > 0 ? nextWeekEvents.join('\n') : '特にありません。');
+    sendLineMessage(message);
+  } catch (err) {
+    console.error('notifyMorning error: ' + (err && err.message ? err.message : err));
   }
-
-  let message = '☀️ おはようございます！\n現在の状況をお知らせします。\n\n' + weatherMessage;
-  if (milestoneMessages.length > 0) message += milestoneMessages.join('\n') + '\n\n';
-  message += '【期限が迫っているタスク】\n' + (taskMessages.length > 0 ? taskMessages.join('\n') : '現在はありません。') + '\n\n';
-  message += '【1週間後の予定】\n' + (nextWeekEvents.length > 0 ? nextWeekEvents.join('\n') : '特にありません。');
-  sendLineMessage(message);
 }
 
 function notifyNight() {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const events = CalendarApp.getDefaultCalendar().getEventsForDay(tomorrow);
-  let garbageList = [], scheduleList = [];
-  for (let i = 0; i < events.length; i++) {
-    const title = events[i].getTitle();
-    if (title.includes('ごみ')) garbageList.push(title);
-    else scheduleList.push('・' + (events[i].isAllDayEvent() ? '終日' : Utilities.formatDate(events[i].getStartTime(), 'Asia/Tokyo', 'HH:mm')) + ': ' + title);
+  try {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const events = CalendarApp.getDefaultCalendar().getEventsForDay(tomorrow);
+    let garbageList = [], scheduleList = [];
+    for (let i = 0; i < events.length; i++) {
+      const title = events[i].getTitle();
+      if (title.includes('ごみ')) garbageList.push(title);
+      else scheduleList.push('・' + (events[i].isAllDayEvent() ? '終日' : Utilities.formatDate(events[i].getStartTime(), 'Asia/Tokyo', 'HH:mm')) + ': ' + title);
+    }
+    let message = '🌙 明日の予定をお知らせします\n\n' + (scheduleList.length > 0 ? scheduleList.join('\n') : '予定は特にありません。') + '\n\n';
+    if (garbageList.length > 0) message += '🗑️ 明日は「' + garbageList.join('と') + '」の日です！';
+    sendLineMessage(message);
+  } catch (err) {
+    console.error('notifyNight error: ' + (err && err.message ? err.message : err));
   }
-  let message = '🌙 明日の予定をお知らせします\n\n' + (scheduleList.length > 0 ? scheduleList.join('\n') : '予定は特にありません。') + '\n\n';
-  if (garbageList.length > 0) message += '🗑️ 明日は「' + garbageList.join('と') + '」の日です！';
-  sendLineMessage(message);
 }
 
 function getWeatherForecast() {
