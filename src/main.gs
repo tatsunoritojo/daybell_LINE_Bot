@@ -130,6 +130,8 @@ function handleWebhookEvent(event) {
       acquired = lock.tryLock(10000);
       if (!acquired) {
         console.log('Could not acquire lock within 10s, skipping postback. action=' + params.action);
+        // 無言失敗はユーザーの再連打を誘発するので、明示的に案内を返す
+        if (replyToken) replyLineMessage(replyToken, '処理が重なったため完了できませんでした。もう一度操作してください。');
         return;
       }
 
@@ -374,15 +376,39 @@ function showGoalSelection(replyToken) {
   halfYearLater.setMonth(now.getMonth() + 6);
   const events = calendar.getEvents(now, halfYearLater);
 
-  let items = [];
-  for (let i = 0; i < Math.min(events.length, 13); i++) {
+  // 全予定から候補を収集（既に【目標】なものは除外）。
+  // 旧実装は先頭13件しか見ていなかったため、【目標】が先頭に固まっている時に
+  // 候補が0件になる不具合があった。候補収集と表示上限を分離する
+  const candidates = [];
+  for (let i = 0; i < events.length; i++) {
     const title = events[i].getTitle();
-    if (!title.includes('【目標】')) {
-      items.push({ "type": "action", "action": { "type": "message", "label": title.substring(0, 20), "text": "これを目標にする：" + title } });
-    }
+    if (!title.includes('【目標】')) candidates.push(title);
   }
-  if (items.length > 0) sendQuickReply(replyToken, "どの予定を目標カウントダウンに設定しますか？", items);
-  else replyLineMessage(replyToken, "候補が見つかりませんでした。");
+
+  if (candidates.length === 0) {
+    replyLineMessage(replyToken, '目標候補の予定が見つかりませんでした。まず予定をカレンダーに登録してから試してください。');
+    return;
+  }
+
+  // LINE Quick Reply の action 上限は 13 件
+  const MAX_QUICK_REPLY = 13;
+  const displayed = candidates.slice(0, MAX_QUICK_REPLY);
+  const items = displayed.map(function (title) {
+    return {
+      "type": "action",
+      "action": {
+        "type": "message",
+        "label": title.substring(0, 20),
+        "text": "これを目標にする：" + title
+      }
+    };
+  });
+
+  let text = 'どの予定を目標カウントダウンに設定しますか？';
+  if (candidates.length > MAX_QUICK_REPLY) {
+    text += '\n（候補が多いため直近の ' + MAX_QUICK_REPLY + ' 件のみ表示しています。全 ' + candidates.length + ' 件）';
+  }
+  sendQuickReply(replyToken, text, items);
 }
 
 function handleGoalConfirmation(replyToken, userMessage) {
