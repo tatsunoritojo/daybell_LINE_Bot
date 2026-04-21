@@ -180,58 +180,104 @@ function handleGoalConfirmation(replyToken, userMessage) {
   }
 }
 
-// リッチメニュー「予定確認」から呼ばれる：今日から7日分の予定を日付ごとに整形して返す
+// リッチメニュー「予定確認」から呼ばれる：今日から7日分の予定をFlex Messageで返す
+// 各日 getEventsForDay で取得するため、複数日にまたがる予定は該当する各日に出現する（取りこぼしなし）
 function replyUpcomingWeekSchedule(replyToken) {
   const calendar = CalendarApp.getDefaultCalendar();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const rangeEnd = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-  rangeEnd.setHours(23, 59, 59, 999);
-
-  const events = calendar.getEvents(today, rangeEnd);
-
-  // 日付(yyyy-MM-dd)をキーにイベントをグルーピング。ごみ予定は除外
-  const eventsByDate = {};
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i];
-    if (event.getTitle().includes('ごみ')) continue;
-    const dateKey = Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'yyyy-MM-dd');
-    if (!eventsByDate[dateKey]) eventsByDate[dateKey] = [];
-    eventsByDate[dateKey].push(event);
-  }
 
   const weekDayLabels = ['日', '月', '火', '水', '木', '金', '土'];
-  let message = '📆 【今後1週間の予定】\n\n';
+  const bodyContents = [];
   let hasAny = false;
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
-    const dateKey = Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
-    const specialLabel = i === 0 ? ' (今日)' : i === 1 ? ' (明日)' : '';
-    const header = '■ ' + Utilities.formatDate(d, 'Asia/Tokyo', 'M/d') + '(' + weekDayLabels[d.getDay()] + ')' + specialLabel;
-
-    const dayEvents = eventsByDate[dateKey];
-    if (!dayEvents || dayEvents.length === 0) continue;
-
-    hasAny = true;
-    message += header + '\n';
-    for (let j = 0; j < dayEvents.length; j++) {
-      const event = dayEvents[j];
-      // 目標・タスクのプレフィックスを見やすく変換
-      let title = event.getTitle().replace('【目標】', '🚩 ').replace('【タスク】', '');
-      if (event.isAllDayEvent()) {
-        message += '  ・終日: ' + title + '\n';
-      } else {
-        const time = Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm');
-        message += '  ・' + time + ' ' + title + '\n';
-      }
+    const rawEvents = calendar.getEventsForDay(d);
+    const events = [];
+    for (let k = 0; k < rawEvents.length; k++) {
+      if (!rawEvents[k].getTitle().includes('ごみ')) events.push(rawEvents[k]);
     }
-    message += '\n';
+    if (events.length === 0) continue;
+    hasAny = true;
+
+    const dateLabel = Utilities.formatDate(d, 'Asia/Tokyo', 'M/d') + '(' + weekDayLabels[d.getDay()] + ')';
+    const specialLabel = i === 0 ? ' 今日' : i === 1 ? ' 明日' : '';
+    const headerColor = i === 0 ? '#D97706' : '#3D2510';
+
+    bodyContents.push({
+      "type": "box",
+      "layout": "vertical",
+      "margin": i === 0 ? "none" : "lg",
+      "contents": [
+        { "type": "text", "text": dateLabel + specialLabel, "weight": "bold", "size": "md", "color": headerColor },
+        { "type": "separator", "margin": "xs", "color": "#D9CDB0" }
+      ]
+    });
+
+    for (let j = 0; j < events.length; j++) {
+      const event = events[j];
+      const rawTitle = event.getTitle();
+      const isGoal = rawTitle.includes('【目標】');
+      const cleanTitle = rawTitle.replace('【目標】', '').replace('【タスク】', '');
+
+      // 時間ラベル：終日 / 前日以前からの継続 / 通常時刻
+      let timeText;
+      if (event.isAllDayEvent()) {
+        timeText = '終日';
+      } else if (event.getStartTime().getTime() < d.getTime()) {
+        timeText = '継続中';
+      } else {
+        timeText = Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm');
+      }
+
+      bodyContents.push({
+        "type": "box",
+        "layout": "baseline",
+        "spacing": "sm",
+        "margin": "sm",
+        "contents": [
+          { "type": "text", "text": timeText, "size": "xs", "color": "#999999", "flex": 3 },
+          { "type": "text", "text": (isGoal ? "🚩 " : "") + cleanTitle, "size": "sm", "color": "#3D2510", "flex": 9, "wrap": true }
+        ]
+      });
+    }
   }
 
-  if (!hasAny) message += '今後1週間の予定はありません。';
+  if (!hasAny) {
+    replyLineMessage(replyToken, '📆 今後1週間の予定はありません。');
+    return;
+  }
 
-  replyLineMessage(replyToken, message);
+  const endDate = new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000);
+  const rangeText = Utilities.formatDate(today, 'Asia/Tokyo', 'M/d') + '(' + weekDayLabels[today.getDay()] + ')'
+    + ' 〜 ' + Utilities.formatDate(endDate, 'Asia/Tokyo', 'M/d') + '(' + weekDayLabels[endDate.getDay()] + ')';
+
+  sendLinePayload(replyToken, {
+    "type": "flex",
+    "altText": "今後1週間の予定",
+    "contents": {
+      "type": "bubble",
+      "size": "mega",
+      "header": {
+        "type": "box",
+        "layout": "vertical",
+        "backgroundColor": "#F5EDD9",
+        "paddingAll": "md",
+        "contents": [
+          { "type": "text", "text": "📆 今後1週間の予定", "weight": "bold", "size": "lg", "color": "#3D2510" },
+          { "type": "text", "text": rangeText, "size": "xs", "color": "#6B4A2A", "margin": "xs" }
+        ]
+      },
+      "body": {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "none",
+        "paddingAll": "md",
+        "contents": bodyContents
+      }
+    }
+  });
 }
 
 function notifyMorning() {
@@ -239,10 +285,9 @@ function notifyMorning() {
     const calendar = CalendarApp.getDefaultCalendar();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const weatherMessage = getWeatherForecast();
     const allEvents = calendar.getEvents(today, new Date(today.getTime() + 180 * 24 * 60 * 60 * 1000));
 
-    let milestoneMessages = [], taskMessages = [], nextWeekEvents = [];
+    let milestones = [], tasks = [], nextWeek = [];
     for (let i = 0; i < allEvents.length; i++) {
       const event = allEvents[i];
       const title = event.getTitle();
@@ -250,16 +295,77 @@ function notifyMorning() {
       eventDate.setHours(0, 0, 0, 0);
       const diffDays = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-      if (title.includes('【目標】') && diffDays >= 0) milestoneMessages.push('🚩 ' + title.replace('【目標】', '') + ' まであと ' + diffDays + ' 日');
-      else if (title.includes('【タスク】') && diffDays >= 0 && diffDays <= 3) taskMessages.push(diffDays === 0 ? '・今日まで: ' + title.replace('【タスク】','') : '・残り' + diffDays + '日: ' + title.replace('【タスク】',''));
-      else if (diffDays === 7 && !title.includes('ごみ')) nextWeekEvents.push('・' + (event.isAllDayEvent() ? '終日' : Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm')) + ': ' + title);
+      if (title.includes('【目標】') && diffDays >= 0) {
+        milestones.push({ title: title.replace('【目標】', ''), days: diffDays });
+      } else if (title.includes('【タスク】') && diffDays >= 0 && diffDays <= 3) {
+        tasks.push({ title: title.replace('【タスク】', ''), days: diffDays });
+      } else if (diffDays === 7 && !title.includes('ごみ')) {
+        nextWeek.push({
+          title: title,
+          time: event.isAllDayEvent() ? '終日' : Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm')
+        });
+      }
     }
 
-    let message = '☀️ おはようございます！\n現在の状況をお知らせします。\n\n' + weatherMessage;
-    if (milestoneMessages.length > 0) message += milestoneMessages.join('\n') + '\n\n';
-    message += '【期限が迫っているタスク】\n' + (taskMessages.length > 0 ? taskMessages.join('\n') : '現在はありません。') + '\n\n';
-    message += '【1週間後の予定】\n' + (nextWeekEvents.length > 0 ? nextWeekEvents.join('\n') : '特にありません。');
-    sendLineMessage(message);
+    const weather = getWeatherForecastLines();
+    const weekDayLabels = ['日', '月', '火', '水', '木', '金', '土'];
+    const dateLabel = Utilities.formatDate(today, 'Asia/Tokyo', 'M/d') + '(' + weekDayLabels[today.getDay()] + ')';
+
+    const bodyContents = [];
+
+    // 天気
+    bodyContents.push(makeSectionHeader('☁️ 天気予報（東京）'));
+    for (let i = 0; i < weather.length; i++) {
+      bodyContents.push(makeRow(weather[i].label, weather[i].text, '#999999'));
+    }
+
+    // 目標カウントダウン
+    if (milestones.length > 0) {
+      bodyContents.push(makeSectionHeader('🚩 目標カウントダウン'));
+      for (let i = 0; i < milestones.length; i++) {
+        bodyContents.push(makeRow('あと ' + milestones[i].days + '日', milestones[i].title, '#E85D3B'));
+      }
+    }
+
+    // 期限が迫るタスク
+    bodyContents.push(makeSectionHeader('⏰ 期限が迫っているタスク'));
+    if (tasks.length > 0) {
+      for (let i = 0; i < tasks.length; i++) {
+        const left = tasks[i].days === 0 ? '今日まで' : '残り' + tasks[i].days + '日';
+        bodyContents.push(makeRow(left, tasks[i].title, '#999999'));
+      }
+    } else {
+      bodyContents.push({ "type": "text", "text": "現在はありません。", "size": "sm", "color": "#999999", "margin": "xs" });
+    }
+
+    // 1週間後の予定
+    bodyContents.push(makeSectionHeader('📆 1週間後の予定'));
+    if (nextWeek.length > 0) {
+      for (let i = 0; i < nextWeek.length; i++) {
+        bodyContents.push(makeRow(nextWeek[i].time, nextWeek[i].title, '#999999'));
+      }
+    } else {
+      bodyContents.push({ "type": "text", "text": "特にありません。", "size": "sm", "color": "#999999", "margin": "xs" });
+    }
+
+    pushLinePayload({
+      "type": "flex",
+      "altText": "☀️ おはようございます！今日の状況をお知らせします",
+      "contents": {
+        "type": "bubble",
+        "size": "mega",
+        "header": {
+          "type": "box", "layout": "vertical", "backgroundColor": "#FFE8BC", "paddingAll": "md",
+          "contents": [
+            { "type": "text", "text": "☀️ おはようございます", "weight": "bold", "size": "lg", "color": "#3D2510" },
+            { "type": "text", "text": dateLabel, "size": "xs", "color": "#6B4A2A", "margin": "xs" }
+          ]
+        },
+        "body": {
+          "type": "box", "layout": "vertical", "paddingAll": "md", "contents": bodyContents
+        }
+      }
+    });
   } catch (err) {
     console.error('notifyMorning error: ' + (err && err.message ? err.message : err));
   }
@@ -272,27 +378,107 @@ function notifyNight() {
     const events = CalendarApp.getDefaultCalendar().getEventsForDay(tomorrow);
     let garbageList = [], scheduleList = [];
     for (let i = 0; i < events.length; i++) {
-      const title = events[i].getTitle();
-      if (title.includes('ごみ')) garbageList.push(title);
-      else scheduleList.push('・' + (events[i].isAllDayEvent() ? '終日' : Utilities.formatDate(events[i].getStartTime(), 'Asia/Tokyo', 'HH:mm')) + ': ' + title);
+      const event = events[i];
+      const title = event.getTitle();
+      if (title.includes('ごみ')) {
+        garbageList.push(title);
+      } else {
+        const rawTitle = title;
+        const isGoal = rawTitle.includes('【目標】');
+        const cleanTitle = rawTitle.replace('【目標】', '').replace('【タスク】', '');
+        let timeText;
+        if (event.isAllDayEvent()) {
+          timeText = '終日';
+        } else if (event.getStartTime().getTime() < tomorrow.getTime()) {
+          timeText = '継続中';
+        } else {
+          timeText = Utilities.formatDate(event.getStartTime(), 'Asia/Tokyo', 'HH:mm');
+        }
+        scheduleList.push({ time: timeText, title: (isGoal ? '🚩 ' : '') + cleanTitle });
+      }
     }
-    let message = '🌙 明日の予定をお知らせします\n\n' + (scheduleList.length > 0 ? scheduleList.join('\n') : '予定は特にありません。') + '\n\n';
-    if (garbageList.length > 0) message += '🗑️ 明日は「' + garbageList.join('と') + '」の日です！';
-    sendLineMessage(message);
+
+    const weekDayLabels = ['日', '月', '火', '水', '木', '金', '土'];
+    const dateLabel = Utilities.formatDate(tomorrow, 'Asia/Tokyo', 'M/d') + '(' + weekDayLabels[tomorrow.getDay()] + ')';
+
+    const bodyContents = [];
+
+    bodyContents.push(makeSectionHeader('📆 明日の予定'));
+    if (scheduleList.length > 0) {
+      for (let i = 0; i < scheduleList.length; i++) {
+        bodyContents.push(makeRow(scheduleList[i].time, scheduleList[i].title, '#999999'));
+      }
+    } else {
+      bodyContents.push({ "type": "text", "text": "特にありません。", "size": "sm", "color": "#999999", "margin": "xs" });
+    }
+
+    if (garbageList.length > 0) {
+      bodyContents.push(makeSectionHeader('🗑️ 明日のゴミ出し'));
+      bodyContents.push({
+        "type": "text",
+        "text": '「' + garbageList.join('と') + '」の日です',
+        "size": "sm", "color": "#3D2510", "margin": "xs", "wrap": true
+      });
+    }
+
+    pushLinePayload({
+      "type": "flex",
+      "altText": "🌙 明日の予定",
+      "contents": {
+        "type": "bubble",
+        "size": "mega",
+        "header": {
+          "type": "box", "layout": "vertical", "backgroundColor": "#4A6590", "paddingAll": "md",
+          "contents": [
+            { "type": "text", "text": "🌙 明日の予定", "weight": "bold", "size": "lg", "color": "#F5EDD9" },
+            { "type": "text", "text": dateLabel, "size": "xs", "color": "#C9D4E5", "margin": "xs" }
+          ]
+        },
+        "body": {
+          "type": "box", "layout": "vertical", "paddingAll": "md", "contents": bodyContents
+        }
+      }
+    });
   } catch (err) {
     console.error('notifyNight error: ' + (err && err.message ? err.message : err));
   }
 }
 
-function getWeatherForecast() {
+// 気象庁APIから天気を取得し、日別に配列で返す（Flexで行ごとに表示するため）
+function getWeatherForecastLines() {
   try {
     const data = JSON.parse(UrlFetchApp.fetch('https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json').getContentText());
     const weathers = data[0].timeSeries[0].areas[0].weathers;
-    let msg = '☁️ 【東京の天気予報】\n';
     const labels = ['今日', '明日', '明後日'];
-    for (let i = 0; i < 3; i++) msg += '・' + labels[i] + ': ' + weathers[i].replace(/　/g, ' ') + '\n';
-    return msg + '\n';
-  } catch(e) { return '☁️ 【天気予報】取得失敗\n\n'; }
+    const result = [];
+    for (let i = 0; i < 3; i++) {
+      result.push({ label: labels[i], text: weathers[i].replace(/　/g, ' ') });
+    }
+    return result;
+  } catch(e) {
+    return [{ label: '取得失敗', text: '天気情報を取得できませんでした' }];
+  }
+}
+
+// Flex Message用の共通パーツ
+function makeSectionHeader(text) {
+  return {
+    "type": "box", "layout": "vertical", "margin": "lg",
+    "contents": [
+      { "type": "text", "text": text, "weight": "bold", "size": "sm", "color": "#3D2510" },
+      { "type": "separator", "margin": "xs", "color": "#D9CDB0" }
+    ]
+  };
+}
+
+function makeRow(leftText, rightText, leftColor) {
+  return {
+    "type": "box", "layout": "baseline", "spacing": "sm", "margin": "sm",
+    "contents": [
+      { "type": "text", "text": leftText, "size": "xs", "color": leftColor || '#999999', "flex": 3 },
+      { "type": "text", "text": rightText, "size": "sm", "color": "#3D2510", "flex": 7, "wrap": true }
+    ]
+  };
 }
 
 // --- 通信ユーティリティ ---
@@ -305,11 +491,12 @@ function sendLinePayload(replyToken, payload) {
   });
 }
 
-function sendLineMessage(text) {
+// 任意のメッセージオブジェクト（Flex・テキスト等）をpush通知として送る
+function pushLinePayload(payload) {
   UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
     'method': 'post',
     'headers': { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN },
-    'payload': JSON.stringify({ 'to': LINE_USER_ID, 'messages': [{ 'type': 'text', 'text': text }] })
+    'payload': JSON.stringify({ 'to': LINE_USER_ID, 'messages': [payload] })
   });
 }
 
