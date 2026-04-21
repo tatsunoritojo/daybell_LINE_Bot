@@ -1,0 +1,16 @@
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# clasp（GAS CLI を使う場合）
+.clasp.json
+.clasprc.json
+
+# 秘密情報を誤コミットしないように
+*.secret
+credentials.json
