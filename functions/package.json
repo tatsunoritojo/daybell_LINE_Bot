@@ -1,0 +1,18 @@
+{
+  "name": "daybell-line-webhook-proxy",
+  "version": "1.0.0",
+  "description": "LINE Webhook proxy for daybell. Verifies x-line-signature (HMAC-SHA256) and forwards verified requests to the GAS Web App, wrapped with a shared proxy token.",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "start": "functions-framework --target=lineWebhookProxy --signature-type=http",
+    "test": "node --test",
+    "deploy": "gcloud functions deploy lineWebhookProxy --gen2 --runtime=nodejs20 --region=asia-northeast1 --trigger-http --allow-unauthenticated --entry-point=lineWebhookProxy --memory=256Mi --timeout=30s --set-secrets=LINE_CHANNEL_SECRET=line-channel-secret:latest,PROXY_SHARED_SECRET=proxy-shared-secret:latest,GAS_WEBHOOK_URL=gas-webhook-url:latest"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.4.2"
+  }
+}

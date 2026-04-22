@@ -11,6 +11,14 @@ Thumbs.db
 .clasp.json
 .clasprc.json
 
+# Cloud Functions プロキシ (functions/) の依存
+node_modules/
+
+# 環境変数（.env.example はコミットする）
+.env
+.env.local
+.env.*.local
+
 # 秘密情報を誤コミットしないように
 *.secret
 credentials.json
