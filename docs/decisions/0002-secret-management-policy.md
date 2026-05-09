@@ -20,7 +20,7 @@ Accepted (2026-05-09)
 | レイヤー | 保管先 | 平文 / 暗号化 | 管理方法 |
 |---|---|---|---|
 | Cloud Functions | **Secret Manager** | 暗号化 | `--set-secrets KEY=secret:latest` で注入 |
-| GAS | **Script Properties** | 平文（GAS 制約） | 初回のみ `setup()` で雛形作成、値は GAS UI で手入力 |
+| GAS | **Script Properties** | 平文（GAS 制約） | 初回のみ `setup()` で雛形作成、値は GAS UI で手入力。`PROXY_SHARED_SECRET` は推奨構成（`main.gs` の `doPost` に `proxyToken` 検証分岐を追加した場合）でのみ使用 |
 | ローカル開発 | **`.secrets/` ディレクトリ**（`.gitignore` 対象） | 平文 | バックアップ用途、本番動作には影響しない |
 | リポジトリ | **コミットしない** | — | `.gitignore` で `.secrets/`、`.env*`、`credentials.json`、`*.secret` を除外 |
 
@@ -30,7 +30,11 @@ Accepted (2026-05-09)
 2. クライアント名義（または専用）の GCP project を作成
 3. Secret Manager に必要な値（LINE Channel Secret、`PROXY_SHARED_SECRET` 等）を登録（[`functions/README.md`](../../functions/README.md) 手順）
 4. GAS Script Properties に必要な値（`LINE_ACCESS_TOKEN`、`LINE_USER_ID`、`TARGET_CALENDAR_ID` 等）を手入力（[`README.md`](../../README.md) 手順）
-5. 値の管理責任はクライアント側に渡す。東城は引き渡し後、値を保持しない
+5. **引き渡し後の必須作業**（東城が値を保持しない運用を担保するため）:
+   - LINE Channel Access Token を再発行（旧トークンを失効させる）
+   - `PROXY_SHARED_SECRET` を再生成し、Secret Manager と GAS Properties の両方を更新
+   - Secret Manager IAM / GAS スクリプト共有から東城のアカウントを除外
+6. 以降、値の管理責任はクライアント側にある
 
 ### 機密ファイル取扱いの規律
 
